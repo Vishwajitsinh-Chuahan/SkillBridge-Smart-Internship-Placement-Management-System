@@ -722,7 +722,7 @@ if (strpos($full_name, ' ') !== false) {
                     <!-- Company Navigation -->
                     <div class="nav-section">
                         <div class="nav-section-title">Internships</div>
-                        <a href="<?php echo BASE_URL; ?>/internships/post.php" class="nav-item">
+                        <a href="<?php echo BASE_URL; ?>/internships/create.php" class="nav-item">
                             <i class="fas fa-plus-circle"></i>
                             Post New Internship
                         </a>
