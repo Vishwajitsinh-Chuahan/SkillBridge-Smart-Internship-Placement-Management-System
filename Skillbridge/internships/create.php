@@ -11,8 +11,8 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'Company') {
 $user_id = $_SESSION['user_id'];
 $full_name = $_SESSION['full_name'] ?? 'Company User';
 
-// Check company approval status
-$stmt = $conn->prepare("SELECT status FROM companies WHERE user_id = ?");
+// ✅ FIXED: Get company data with proper NULL handling
+$stmt = $conn->prepare("SELECT status, trust_level, approved_posts_count FROM companies WHERE user_id = ?");
 $stmt->bind_param("i", $user_id);
 $stmt->execute();
 $company_result = $stmt->get_result();
@@ -24,6 +24,12 @@ if (!$company_data || $company_data['status'] !== 'approved') {
     exit();
 }
 
+// ✅ FIX: Properly handle NULL values and ensure integer type
+$current_trust_level = $company_data['trust_level'] ?? 'new';
+$current_posts_count = isset($company_data['approved_posts_count']) && $company_data['approved_posts_count'] !== null 
+    ? (int)$company_data['approved_posts_count'] 
+    : 0;
+
 $success_message = '';
 $error_message = '';
 
@@ -33,14 +39,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_custom_skill'])) 
     $skill_category = trim($_POST['skill_category']) ?: 'Custom';
     
     if (!empty($custom_skill)) {
-        // Check if skill already exists
         $check_stmt = $conn->prepare("SELECT id FROM skills WHERE skill_name = ?");
         $check_stmt->bind_param("s", $custom_skill);
         $check_stmt->execute();
         $check_result = $check_stmt->get_result();
         
         if ($check_result->num_rows == 0) {
-            // Insert new skill
             $insert_stmt = $conn->prepare("INSERT INTO skills (skill_name, category) VALUES (?, ?)");
             $insert_stmt->bind_param("ss", $custom_skill, $skill_category);
             if ($insert_stmt->execute()) {
@@ -52,13 +56,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_custom_skill'])) 
     }
 }
 
-// Handle form submission
+// ✅ CORRECTED: Handle form submission with trust level logic
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['post_internship'])) {
     $title = trim($_POST['title']);
     $description = trim($_POST['description']);
     $requirements = trim($_POST['requirements']);
     
-    // Combine selected skills and custom skills
     $selected_skills = isset($_POST['skills_required']) ? $_POST['skills_required'] : [];
     $custom_skills_input = trim($_POST['custom_skills'] ?? '');
     
@@ -82,30 +85,86 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['post_internship'])) {
     } elseif (strtotime($application_deadline) < strtotime('today')) {
         $error_message = 'Application deadline must be in the future.';
     } else {
-        // Insert internship
-        $stmt = $conn->prepare("INSERT INTO internships (company_id, title, description, requirements, skills_required, internship_type, location, location_type, duration, stipend, positions_available, application_deadline, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')");
+        // ✅ LOGIC: Determine status based on approved_posts_count
+        // If count > 5: auto-approve and increment count
+        // If count <= 5: set as pending (needs admin approval)
         
-        $stmt->bind_param("isssssssssss", 
-            $user_id, 
-            $title, 
-            $description, 
-            $requirements, 
-            $skills_required, 
-            $internship_type, 
-            $location, 
-            $location_type, 
-            $duration, 
-            $stipend, 
-            $positions_available, 
-            $application_deadline
-        );
+        if ($current_posts_count > 5) {
+            // ✅ Company has more than 5 approved posts - auto-approve
+            $internship_status = 'approved';
+            
+            $stmt = $conn->prepare("INSERT INTO internships (company_id, title, description, requirements, skills_required, internship_type, location, location_type, duration, stipend, positions_available, application_deadline, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            
+            $stmt->bind_param("issssssssssss", 
+                $user_id, 
+                $title, 
+                $description, 
+                $requirements, 
+                $skills_required, 
+                $internship_type, 
+                $location, 
+                $location_type, 
+                $duration, 
+                $stipend, 
+                $positions_available, 
+                $application_deadline,
+                $internship_status
+            );
 
-        if ($stmt->execute()) {
-            $_SESSION['success'] = 'Internship posted successfully! It will be visible after admin approval.';
-            header('Location: manage.php?success=posted');
-            exit();
+            if ($stmt->execute()) {
+                // ✅ Increment approved_posts_count directly
+                $update_count = $conn->prepare("UPDATE companies SET approved_posts_count = approved_posts_count + 1 WHERE user_id = ?");
+                $update_count->bind_param("i", $user_id);
+                $update_count->execute();
+                
+                $new_count = $current_posts_count + 1;
+                
+                // ✅ Check if we need to upgrade trust level to "trusted" (at 10 posts)
+                if ($new_count >= 10 && $current_trust_level === 'verified') {
+                    $upgrade_trust = $conn->prepare("UPDATE companies SET trust_level = 'trusted' WHERE user_id = ?");
+                    $upgrade_trust->bind_param("i", $user_id);
+                    $upgrade_trust->execute();
+                    
+                    $_SESSION['success'] = '🎉 Internship posted successfully and is now LIVE! You have been upgraded to TRUSTED status!';
+                } else {
+                    $_SESSION['success'] = 'Internship posted successfully and is now LIVE! (Auto-approved)';
+                }
+                
+                header('Location: manage.php?success=posted');
+                exit();
+            } else {
+                $error_message = 'Failed to post internship. Please try again.';
+            }
+            
         } else {
-            $error_message = 'Failed to post internship. Please try again.';
+            // ✅ Company has 5 or fewer posts - needs admin approval
+            $internship_status = 'pending';
+            
+            $stmt = $conn->prepare("INSERT INTO internships (company_id, title, description, requirements, skills_required, internship_type, location, location_type, duration, stipend, positions_available, application_deadline, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            
+            $stmt->bind_param("issssssssssss", 
+                $user_id, 
+                $title, 
+                $description, 
+                $requirements, 
+                $skills_required, 
+                $internship_type, 
+                $location, 
+                $location_type, 
+                $duration, 
+                $stipend, 
+                $positions_available, 
+                $application_deadline,
+                $internship_status
+            );
+
+            if ($stmt->execute()) {
+                $_SESSION['success'] = 'Internship posted successfully! It will be visible after admin approval.';
+                header('Location: manage.php?success=posted');
+                exit();
+            } else {
+                $error_message = 'Failed to post internship. Please try again.';
+            }
         }
     }
 }
@@ -739,31 +798,9 @@ $user_initials = strtoupper(substr($full_name, 0, 2));
                                 <input type="text" name="custom_skills" class="form-control" placeholder="Enter custom skills separated by commas">
                             </div>
                         </div>
+                    </div>
 
-                        <!-- Add Skill to Database -->
-                        <!-- <div style="background: #e8f5e9; padding: 1.5rem; border-radius: 12px; border-left: 4px solid #4caf50;">
-                            <h4 style="color: #2e7d32; margin-bottom: 1rem;"><i class="fas fa-database"></i> Add Skill to Database (Optional)</h4>
-                            <p class="help-text" style="color: #2e7d32; margin-bottom: 1rem;">Add a new skill permanently to the database for future use</p>
-                            <div class="add-skill-inline">
-                                <input type="text" name="custom_skill_name" class="form-control" placeholder="Skill name (e.g., Kubernetes)">
-                                <select name="skill_category" class="form-control">
-                                    <option value="">Select Category</option>
-                                    <option value="Programming">Programming</option>
-                                    <option value="Frontend">Frontend</option>
-                                    <option value="Backend">Backend</option>
-                                    <option value="Database">Database</option>
-                                    <option value="DevOps">DevOps</option>
-                                    <option value="Tools">Tools</option>
-                                    <option value="Soft Skills">Soft Skills</option>
-                                    <option value="Custom">Custom</option>
-                                </select>
-                                <button type="submit" name="add_custom_skill">
-                                    <i class="fas fa-plus"></i> Add to Database
-                                </button>
-                            </div>
-                        </div>
-                    </div> -->
-                                <br>
+                    <br>
                     <!-- Location Details -->
                     <div class="section-header">
                         <i class="fas fa-map-marker-alt"></i>
