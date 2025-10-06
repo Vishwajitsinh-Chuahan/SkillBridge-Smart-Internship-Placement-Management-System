@@ -741,7 +741,7 @@ $user_initials = strtoupper(substr($full_name, 0, 2));
                         </div>
 
                         <!-- Add Skill to Database -->
-                        <div style="background: #e8f5e9; padding: 1.5rem; border-radius: 12px; border-left: 4px solid #4caf50;">
+                        <!-- <div style="background: #e8f5e9; padding: 1.5rem; border-radius: 12px; border-left: 4px solid #4caf50;">
                             <h4 style="color: #2e7d32; margin-bottom: 1rem;"><i class="fas fa-database"></i> Add Skill to Database (Optional)</h4>
                             <p class="help-text" style="color: #2e7d32; margin-bottom: 1rem;">Add a new skill permanently to the database for future use</p>
                             <div class="add-skill-inline">
@@ -762,8 +762,8 @@ $user_initials = strtoupper(substr($full_name, 0, 2));
                                 </button>
                             </div>
                         </div>
-                    </div>
-
+                    </div> -->
+                                <br>
                     <!-- Location Details -->
                     <div class="section-header">
                         <i class="fas fa-map-marker-alt"></i>
@@ -826,4 +826,3 @@ $user_initials = strtoupper(substr($full_name, 0, 2));
     </div>
 </body>
 </html>
-
