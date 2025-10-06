@@ -730,6 +730,10 @@ $stats['active_users'] = $result->fetch_assoc()['count'];
                         </span>
                     <?php endif; ?>
                 </a>
+                 <a href="internship-approvals.php" class="nav-link">
+                    <i class="fas fa-clock"></i>
+                    Internship Approvals
+                </a>
                 <a href="users.php" class="nav-link">
                     <i class="fas fa-users"></i>
                     User Management
