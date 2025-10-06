@@ -321,7 +321,7 @@ if (!empty($company_name) && strpos($company_name, ' ') !== false) {
                 <p style="color: #64748b; margin: 0.5rem 0 0 0;">Welcome back! Manage your internships and discover top talent.</p>
             </div>
             <div class="dashboard-actions">
-                <a href="<?php echo BASE_URL; ?>/internships/post.php" class="btn-create">
+                <a href="<?php echo BASE_URL; ?>/internships/create.php" class="btn-create">
                     <i class="fas fa-plus-circle"></i> Post Internship
                 </a>
             </div>
@@ -478,7 +478,7 @@ if (!empty($company_name) && strpos($company_name, ' ') !== false) {
         <div style="margin-top: 2rem; width: 100%;">
             <h3 style="margin-bottom: 1rem; color: #1e293b;">Quick Actions</h3>
             <div class="quick-actions">
-                <a href="<?php echo BASE_URL; ?>/internships/post.php" class="action-card">
+                <a href="<?php echo BASE_URL; ?>/internships/create.php" class="action-card">
                     <i class="fas fa-plus-circle"></i>
                     <h4>Post Internship</h4>
                     <p>Create new internship opportunities</p>
