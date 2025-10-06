@@ -74,11 +74,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 // Fetch company details
 $company_query = "
-    SELECT u.id, u.full_name, u.email, u.phone, u.created_at, u.status as user_status,
-           c.name as company_name, c.industry, c.company_size, c.website, c.address, 
-           c.description, c.logo_path, c.status as company_status, c.updated_at
-    FROM users u 
-    JOIN roles r ON u.role_id = r.id 
+    SELECT 
+        u.id, u.full_name, u.email, u.phone, u.created_at, u.status as user_status,
+        c.name as company_name, c.industry, c.company_size, c.website, c.address, 
+        c.description, c.logo_path, c.status as company_status, c.updated_at,
+        c.trust_level, c.approved_posts_count, c.flagged_posts_count, c.last_reviewed_at
+    FROM users u
+    JOIN roles r ON u.role_id = r.id
     LEFT JOIN companies c ON u.id = c.user_id
     WHERE u.id = ? AND r.role_name = 'Company'
 ";
@@ -550,6 +552,64 @@ function sendCompanyApprovalEmail($company_id, $status, $reason = '') {
                 flex-direction: column;
             }
         }
+
+        .info-row {
+            display: grid;
+            grid-template-columns: 180px 1fr;
+            padding: 0.75rem 0;
+            border-bottom: 1px solid #f5f5f5;
+        }
+
+        .info-row:last-child {
+            border-bottom: none;
+        }
+
+        .info-label {
+            font-size: 0.85rem;
+            color: #7f8c8d;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .info-value {
+            font-size: 0.95rem;
+            color: #2c3e50;
+            font-weight: 500;
+        }
+
+        .trust-level-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .trust-level-badge.new {
+            background: linear-gradient(135deg, #3b82f6, #2563eb);
+            color: white;
+        }
+
+        .trust-level-badge.verified {
+            background: linear-gradient(135deg, #10b981, #059669);
+            color: white;
+        }
+
+        .trust-level-badge.trusted {
+            background: linear-gradient(135deg, #f59e0b, #d97706);
+            color: white;
+        }
+
+        .trust-level-badge.premium {
+            background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+            color: white;
+        }
+
     </style>
 </head>
 <body>
@@ -698,7 +758,41 @@ function sendCompanyApprovalEmail($company_id, $status, $reason = '') {
                             <?php endif; ?>
                         </div>
                     </div>
+                                                <!-- ✅ ADDED: Trust Level -->
+                            <div class="detail-item">
+                                <span class="detail-label">TRUST LEVEL</span>
+                                <div class="detail-value">
+                                    <?php 
+                                    $trustLevel = $company['trust_level'] ?? 'new';
+                                    $trustIcons = [
+                                        'new' => '🆕',
+                                        'verified' => '✅',
+                                        'trusted' => '⭐',
+                                        'premium' => '👑'
+                                    ];
+                                    ?>
+                                    <span class="trust-level-badge <?php echo $trustLevel; ?>">
+                                        <span><?php echo $trustIcons[$trustLevel]; ?></span>
+                                        <span><?php echo ucfirst($trustLevel); ?></span>
+                                    </span>
+                                </div>
+                            </div>
+
+                            <!-- ✅ ADDED: Approved Posts Count -->
+                            <div class="detail-item">
+                                <span class="detail-label">APPROVED POSTS</span>
+                                <div class="detail-value">
+                                    <strong style="color: #10b981; font-size: 1.1rem;">
+                                        <?php echo $company['approved_posts_count'] ?? 0; ?>
+                                    </strong>
+                                    <span style="color: #7f8c8d; font-size: 0.85rem; margin-left: 0.5rem;">
+                                        / 5 required for Verified
+                                    </span>
+                                </div>
+                            </div>
+
                 </div>
+                
 
                 <!-- Contact Information -->
                 <div class="detail-card">
