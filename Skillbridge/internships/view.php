@@ -688,6 +688,28 @@ function getStatusColor($status) {
                     <?php echo nl2br(htmlspecialchars($internship['requirements'])); ?>
                 </div>
             </div>
+
+            <?php if ($internship['status'] === 'rejected' && !empty($internship['rejection_reason'])): ?>
+            <div class="full-width-card" style="border: 2px solid #dc3545;">
+                <div class="card-header" style="background: linear-gradient(135deg, #f8d7da, #f5c6cb); border-radius: 8px; padding: 1.5rem;">
+                    <div class="card-icon" style="background: linear-gradient(135deg, #ef4444, #dc2626);">
+                        <i class="fas fa-exclamation-triangle"></i>
+                    </div>
+                    <h3 style="color: #721c24;">Rejection Reason</h3>
+                </div>
+                <div style="background: #f8d7da; padding: 1.5rem; border-radius: 8px; margin-top: 1rem; border-left: 4px solid #dc3545;">
+                    <p style="color: #721c24; font-weight: 500; margin-bottom: 0.5rem;">
+                        <i class="fas fa-info-circle"></i> Your internship post was rejected by the admin for the following reason:
+                    </p>
+                    <div class="section-content" style="color: #721c24; background: white; padding: 1rem; border-radius: 6px; margin-top: 1rem;">
+                        <?php echo nl2br(htmlspecialchars($internship['rejection_reason'])); ?>
+                    </div>
+                    <p style="color: #721c24; font-size: 0.9rem; margin-top: 1rem; font-style: italic;">
+                        <i class="fas fa-lightbulb"></i> <strong>Next Steps:</strong> Please review the feedback and make necessary changes. You can create a new internship post after addressing these concerns.
+                    </p>
+                </div>
+            </div>
+            <?php endif; ?>
         </div>
     </div>
 </body>
