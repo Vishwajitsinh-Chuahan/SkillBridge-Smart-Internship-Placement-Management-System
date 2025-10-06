@@ -831,22 +831,46 @@ function sendAdminPasswordResetEmail($name, $email, $resetToken) {
 
 <?php
 /**
- * Send company approval or rejection notification email
- * Uses existing email configuration and infrastructure
+ * Send company approval or rejection notification email with Trust Level information
  * @param string $contactName - Contact person name
  * @param string $email - Company email address
  * @param string $companyName - Company name
  * @param string $status - 'approved' or 'rejected'
+ * @param string $trustLevel - Trust level (new/verified/trusted/premium)
  * @param string $reason - Rejection reason (optional)
  * @return array - Success status and message
  */
-function sendCompanyStatusEmail($contactName, $email, $companyName, $status, $reason = '') {
+function sendCompanyStatusEmail($contactName, $email, $companyName, $status, $trustLevel = 'new', $reason = '') {
     
     if ($status === 'approved') {
-         // ✅ FIXED: Create absolute URL
+        // ✅ Trust Level Descriptions
+        $trustLevelInfo = [
+            'new' => [
+                'title' => '🆕 New Company',
+                'description' => 'Your first 5 internship posts require admin approval for quality assurance.',
+                'color' => '#3b82f6'
+            ],
+            'verified' => [
+                'title' => '✅ Verified Company',
+                'description' => 'Your internship posts are auto-approved and published instantly!',
+                'color' => '#10b981'
+            ],
+            'trusted' => [
+                'title' => '⭐ Trusted Company',
+                'description' => 'Premium features unlocked with priority placement and instant publishing.',
+                'color' => '#f59e0b'
+            ],
+            'premium' => [
+                'title' => '👑 Premium Company',
+                'description' => 'VIP access with dedicated support and maximum visibility.',
+                'color' => '#8b5cf6'
+            ]
+        ];
+
+        $currentLevel = $trustLevelInfo[$trustLevel] ?? $trustLevelInfo['new'];
+        
         $loginUrl = 'http://localhost/Skillbridge/auth/login.php';
         $subject = "🎉 Company Registration Approved - Welcome to SkillBridge!";
-       
         
         $message = "
         <html>
@@ -901,6 +925,24 @@ function sendCompanyStatusEmail($contactName, $email, $companyName, $status, $re
                     margin: 20px 0;
                     color: #065f46;
                 }
+                .trust-level-badge {
+                    background: linear-gradient(135deg, " . $currentLevel['color'] . ", " . $currentLevel['color'] . "dd);
+                    color: white;
+                    padding: 15px 20px;
+                    border-radius: 10px;
+                    margin: 25px 0;
+                    text-align: center;
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+                }
+                .trust-level-badge h3 {
+                    margin: 0 0 10px 0;
+                    font-size: 1.3rem;
+                }
+                .trust-level-badge p {
+                    margin: 0;
+                    opacity: 0.95;
+                    font-size: 0.95rem;
+                }
                 .action-button { 
                     display: block;
                     width: fit-content;
@@ -936,6 +978,27 @@ function sendCompanyStatusEmail($contactName, $email, $companyName, $status, $re
                 }
                 .next-steps li {
                     margin-bottom: 8px;
+                }
+                .upgrade-path {
+                    background: #fef3c7;
+                    border: 2px dashed #f59e0b;
+                    border-radius: 10px;
+                    padding: 20px;
+                    margin: 25px 0;
+                    color: #92400e;
+                }
+                .upgrade-path h3 {
+                    margin-top: 0;
+                    color: #78350f;
+                }
+                .upgrade-path .level {
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
+                    margin: 10px 0;
+                    padding: 10px;
+                    background: white;
+                    border-radius: 8px;
                 }
                 .footer { 
                     background: #1e293b;
@@ -974,21 +1037,51 @@ function sendCompanyStatusEmail($contactName, $email, $companyName, $status, $re
                         <strong>Account Access:</strong> Full Access Granted
                     </div>
                     
+                    <div class='trust-level-badge'>
+                        <h3>" . $currentLevel['title'] . "</h3>
+                        <p>" . $currentLevel['description'] . "</p>
+                    </div>
+                    
+                    <div class='upgrade-path'>
+                        <h3>📈 Your Trust Level Upgrade Path</h3>
+                        <p><strong>You are currently at: " . ucfirst($trustLevel) . " Level</strong></p>
+                        
+                        <div class='level'>
+                            <strong>" . ($trustLevel === 'new' ? '👉' : '✅') . " New:</strong> 
+                            <span>First 5 posts require approval (Quality Check)</span>
+                        </div>
+                        
+                        <div class='level'>
+                            <strong>" . ($trustLevel === 'verified' ? '👉' : ($trustLevel === 'new' ? '⏳' : '✅')) . " Verified:</strong> 
+                            <span>After 5 approved posts → Instant publishing!</span>
+                        </div>
+                        
+                        <div class='level'>
+                            <strong>" . ($trustLevel === 'trusted' ? '👉' : '⏳') . " Trusted:</strong> 
+                            <span>After 10+ posts → Priority placement</span>
+                        </div>
+                        
+                        <div class='level'>
+                            <strong>👑 Premium:</strong> 
+                            <span>Contact admin for VIP features</span>
+                        </div>
+                    </div>
+                    
                     <div class='next-steps'>
                         <h3>🚀 What's Next?</h3>
                         <p>You can now access your company dashboard and start posting internship opportunities:</p>
                         <ul>
                             <li>Log in to your company dashboard</li>
                             <li>Complete your company profile</li>
-                            <li>Post internship opportunities</li>
-                            <li>Review student applications</li>
+                            <li>Post your first internship (will be reviewed within 24 hours)</li>
+                            <li>After 5 approved posts, enjoy instant publishing!</li>
                             <li>Connect with talented students</li>
                         </ul>
                     </div>
                     
-                <a href='" . $loginUrl . "' class='action-button'>
-                    Access Company Dashboard
-                </a>
+                    <a href='" . $loginUrl . "' class='action-button'>
+                        Access Company Dashboard
+                    </a>
                     
                     <p>Thank you for choosing SkillBridge as your internship partner. We look forward to helping you connect with talented students and grow your team.</p>
                 </div>
@@ -1177,7 +1270,8 @@ function sendCompanyStatusEmail($contactName, $email, $companyName, $status, $re
         return ['success' => false, 'message' => 'Invalid status provided'];
     }
     
-    // ✅ USE YOUR EXISTING EMAIL SYSTEM (like forgot password)
+    // ✅ USE YOUR EXISTING EMAIL SYSTEM
     return sendEmail($email, $subject, $message, $contactName);
 }
 ?>
+
