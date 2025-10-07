@@ -45,7 +45,7 @@ $stmt->execute();
 $result = $stmt->get_result();
 
 if ($result->num_rows === 0) {
-    $_SESSION['error'] = 'Internship not found.';
+    $_SESSION['error'] = 'Internship not found';
     header('Location: internship-approvals.php');
     exit();
 }
