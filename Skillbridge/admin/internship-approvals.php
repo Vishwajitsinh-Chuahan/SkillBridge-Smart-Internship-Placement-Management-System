@@ -97,7 +97,7 @@ if (isset($_POST['approve_internship'])) {
         // Log admin action
         error_log("Admin {$admin_name} approved internship ID: {$internship_id} for company ID: {$company_id}. Status set to: {$new_status}");
     } else {
-        $error_message = "Internship not found.";
+        $error_message = "Internship not found";
     }
 }
 
