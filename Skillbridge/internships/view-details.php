@@ -18,21 +18,7 @@ if ($internship_id <= 0) {
     exit();
 }
 
-$can_apply = canApplyForInternships($user_id, $conn);
-
-// Get profile completion
-$stmt = $conn->prepare("SELECT * FROM users WHERE id = ?");
-$stmt->bind_param("i", $user_id);
-$stmt->execute();
-$user_data = $stmt->get_result()->fetch_assoc();
-
-$stmt = $conn->prepare("SELECT * FROM student_profiles WHERE user_id = ?");
-$stmt->bind_param("i", $user_id);
-$stmt->execute();
-$profile_data = $stmt->get_result()->fetch_assoc();
-
-$profile_completion = calculateProfileCompletion($user_data, $profile_data);
-// Fetch internship details
+// Fetch internship details with company info
 $query = "
     SELECT 
         i.*,
@@ -42,6 +28,9 @@ $query = "
         c.industry,
         c.website,
         c.company_size,
+        c.description as company_description,
+        c.address as company_address,
+        c.founded_year,
         (SELECT COUNT(*) FROM applications WHERE internship_id = i.id) as application_count,
         (SELECT COUNT(*) FROM saved_internships WHERE internship_id = i.id AND student_id = ?) as is_saved,
         (SELECT COUNT(*) FROM applications WHERE internship_id = i.id AND student_id = ?) as has_applied
@@ -66,9 +55,17 @@ $internship = $result->fetch_assoc();
 $positions_left = $internship['positions_available'] - $internship['application_count'];
 $is_full = $positions_left <= 0;
 
+// Check if deadline passed and if internship is ongoing
+$is_expired = strtotime($internship['application_deadline']) < strtotime('today') || 
+              !in_array($internship['status'], ['approved', 'active']);
+
+$is_ongoing = strtotime($internship['application_deadline']) < strtotime('today') && 
+              strtotime($internship['start_date']) <= strtotime('today') &&
+              (empty($internship['end_date']) || strtotime($internship['end_date']) >= strtotime('today'));
+
+// Profile completion check
 $can_apply = canApplyForInternships($user_id, $conn);
 
-// Get profile completion
 $stmt = $conn->prepare("SELECT * FROM users WHERE id = ?");
 $stmt->bind_param("i", $user_id);
 $stmt->execute();
@@ -77,9 +74,31 @@ $user_data = $stmt->get_result()->fetch_assoc();
 $stmt = $conn->prepare("SELECT * FROM student_profiles WHERE user_id = ?");
 $stmt->bind_param("i", $user_id);
 $stmt->execute();
-$profile_data = $stmt->get_result()->fetch_assoc();
+$profile_result = $stmt->get_result();
+$profile_data = $profile_result->num_rows > 0 ? $profile_result->fetch_assoc() : null;
 
 $profile_completion = calculateProfileCompletion($user_data, $profile_data);
+
+// Get trust level display
+function getTrustLevelDisplay($trust_level) {
+    $levels = [
+        'new' => ['text' => 'Recently Joined', 'icon' => 'fa-star', 'color' => '#3b82f6', 'bg' => '#dbeafe'],
+        'verified' => ['text' => 'Verified Company', 'icon' => 'fa-shield-check', 'color' => '#10b981', 'bg' => '#d1fae5'],
+        'trusted' => ['text' => 'Top Recruiter', 'icon' => 'fa-trophy', 'color' => '#f59e0b', 'bg' => '#fef3c7']
+    ];
+    return $levels[$trust_level] ?? $levels['new'];
+}
+
+$trust_display = getTrustLevelDisplay($internship['trust_level']);
+
+// Get company statistics
+$company_stats = $conn->query("
+    SELECT 
+        COUNT(*) as total_postings,
+        (SELECT COUNT(*) FROM applications a JOIN internships i ON a.internship_id = i.id WHERE i.company_id = {$internship['company_id']} AND a.status = 'selected') as total_hires
+    FROM internships 
+    WHERE company_id = {$internship['company_id']}
+")->fetch_assoc();
 
 // Get user initials
 $user_initials = strtoupper(substr($full_name, 0, 2));
@@ -313,16 +332,22 @@ $user_initials = strtoupper(substr($full_name, 0, 2));
             gap: 0.75rem;
         }
 
+        .alert-warning {
+            background: #fef3c7;
+            border-left: 4px solid #f59e0b;
+            color: #92400e;
+        }
+
         .alert-success {
             background: #d1fae5;
             border-left: 4px solid #10b981;
             color: #065f46;
         }
 
-        .alert-warning {
-            background: #fef3c7;
-            border-left: 4px solid #f59e0b;
-            color: #92400e;
+        .alert-info {
+            background: #dbeafe;
+            border-left: 4px solid #3b82f6;
+            color: #1e40af;
         }
 
         /* Internship Header Card */
@@ -348,7 +373,7 @@ $user_initials = strtoupper(substr($full_name, 0, 2));
             margin-bottom: 0.75rem;
         }
 
-        .company-info {
+        .company-info-header {
             display: flex;
             align-items: center;
             gap: 1rem;
@@ -365,16 +390,14 @@ $user_initials = strtoupper(substr($full_name, 0, 2));
         }
 
         .trust-badge {
-            padding: 0.35rem 0.85rem;
+            padding: 0.5rem 1rem;
             border-radius: 20px;
-            font-size: 0.75rem;
+            font-size: 0.8rem;
             font-weight: 700;
-            text-transform: uppercase;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
         }
-
-        .trust-badge.new { background: #dbeafe; color: #1e40af; }
-        .trust-badge.verified { background: #d1fae5; color: #065f46; }
-        .trust-badge.trusted { background: #fef3c7; color: #92400e; }
 
         .header-actions {
             display: flex;
@@ -382,13 +405,13 @@ $user_initials = strtoupper(substr($full_name, 0, 2));
         }
 
         .btn {
-            padding: 0.75rem 1.5rem;
+            padding: 0.875rem 1.5rem;
             border-radius: 8px;
             font-weight: 600;
             border: none;
             cursor: pointer;
             transition: all 0.3s;
-            font-size: 0.9rem;
+            font-size: 0.95rem;
             display: inline-flex;
             align-items: center;
             gap: 0.5rem;
@@ -405,12 +428,6 @@ $user_initials = strtoupper(substr($full_name, 0, 2));
             box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
         }
 
-        .btn-primary:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-            transform: none;
-        }
-
         .btn-save {
             background: #f1f5f9;
             color: #475569;
@@ -425,53 +442,82 @@ $user_initials = strtoupper(substr($full_name, 0, 2));
             color: #92400e;
         }
 
-        .meta-grid {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 1.5rem;
-            padding: 1.5rem;
-            background: #f8fafc;
-            border-radius: 8px;
+        .btn-warning {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .btn-warning:hover {
+            background: #fde68a;
+        }
+
+        .btn-disabled {
+            background: #e5e7eb;
+            color: #9ca3af;
+            cursor: not-allowed;
+        }
+
+        .header-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 2rem;
+            padding: 1.5rem 0;
+            border-top: 1px solid #e2e8f0;
+            border-bottom: 1px solid #e2e8f0;
         }
 
         .meta-item {
             display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .meta-icon {
+            width: 40px;
+            height: 40px;
+            background: #f1f5f9;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #667eea;
+            font-size: 1.1rem;
+        }
+
+        .meta-content {
+            display: flex;
             flex-direction: column;
-            gap: 0.5rem;
         }
 
         .meta-label {
-            font-size: 0.75rem;
+            font-size: 0.8rem;
             color: #64748b;
-            text-transform: uppercase;
             font-weight: 600;
-            letter-spacing: 0.5px;
         }
 
         .meta-value {
             font-size: 1rem;
             color: #1e293b;
             font-weight: 600;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-
-        .meta-value i {
-            color: #667eea;
         }
 
         /* Content Sections */
+        .content-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 2rem;
+        }
+
         .section-card {
             background: white;
             border-radius: 12px;
             padding: 2rem;
             box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-            margin-bottom: 1.5rem;
+            margin-bottom: 2rem;
         }
 
         .section-title {
-            font-size: 1.25rem;
+            font-size: 1.5rem;
             color: #1e293b;
             font-weight: 700;
             margin-bottom: 1rem;
@@ -490,20 +536,6 @@ $user_initials = strtoupper(substr($full_name, 0, 2));
             font-size: 0.95rem;
         }
 
-        .section-content p {
-            margin-bottom: 1rem;
-        }
-
-        .section-content ul,
-        .section-content ol {
-            margin-left: 1.5rem;
-            margin-bottom: 1rem;
-        }
-
-        .section-content li {
-            margin-bottom: 0.5rem;
-        }
-
         .skills-grid {
             display: flex;
             flex-wrap: wrap;
@@ -519,70 +551,125 @@ $user_initials = strtoupper(substr($full_name, 0, 2));
             font-weight: 600;
         }
 
-        .company-details-grid {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
+        .requirements-list {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+
+        .requirements-list li {
+            display: flex;
+            align-items: start;
+            gap: 0.75rem;
+            color: #475569;
+            line-height: 1.6;
+        }
+
+        .requirements-list li i {
+            color: #10b981;
+            margin-top: 0.25rem;
+        }
+
+        /* Company Card */
+        .company-card {
+            background: white;
+            border-radius: 12px;
+            padding: 2rem;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+
+        .company-card-title {
+            font-size: 1.25rem;
+            color: #1e293b;
+            font-weight: 700;
+            margin-bottom: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .company-detail {
+            display: flex;
+            align-items: start;
             gap: 1rem;
+            padding: 1rem 0;
+            border-bottom: 1px solid #f1f5f9;
         }
 
-        .detail-item {
-            padding: 1rem;
-            background: #f8fafc;
+        .company-detail:last-child {
+            border-bottom: none;
+        }
+
+        .company-detail-icon {
+            width: 40px;
+            height: 40px;
+            background: #f1f5f9;
             border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #667eea;
+            flex-shrink: 0;
         }
 
-        .detail-label {
-            font-size: 0.75rem;
+        .company-detail-content {
+            flex: 1;
+        }
+
+        .company-detail-label {
+            font-size: 0.8rem;
             color: #64748b;
-            text-transform: uppercase;
             font-weight: 600;
-            margin-bottom: 0.5rem;
+            margin-bottom: 0.25rem;
         }
 
-        .detail-value {
+        .company-detail-value {
             font-size: 0.95rem;
             color: #1e293b;
             font-weight: 600;
         }
 
-        /* Sticky Apply Bar */
-        .sticky-apply-bar {
-            position: fixed;
-            bottom: 0;
-            left: 280px;
-            right: 0;
-            background: white;
-            padding: 1.5rem 2rem;
-            box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            z-index: 100;
+        .company-description {
+            color: #475569;
+            line-height: 1.8;
+            font-size: 0.9rem;
+            padding: 1rem 0;
+            border-top: 1px solid #f1f5f9;
+            margin-top: 1rem;
         }
 
-        .positions-info {
-            font-size: 1rem;
-            color: #64748b;
+        .company-stats {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 1rem;
+            margin-top: 1.5rem;
+            padding-top: 1.5rem;
+            border-top: 1px solid #f1f5f9;
         }
 
-        .positions-info strong {
-            color: #1e293b;
-            font-size: 1.25rem;
+        .stat-item {
+            text-align: center;
+            padding: 1rem;
+            background: #f8fafc;
+            border-radius: 8px;
         }
 
-        .positions-full {
-            color: #ef4444;
+        .stat-value {
+            font-size: 1.75rem;
             font-weight: 700;
+            color: #667eea;
+            margin-bottom: 0.25rem;
+        }
+
+        .stat-label {
+            font-size: 0.8rem;
+            color: #64748b;
+            font-weight: 600;
         }
 
         @media (max-width: 1024px) {
-            .meta-grid {
-                grid-template-columns: repeat(2, 1fr);
-            }
-        }
-
-        @media (max-width: 768px) {
-            .company-details-grid {
+            .content-grid {
                 grid-template-columns: 1fr;
             }
         }
@@ -649,9 +736,6 @@ $user_initials = strtoupper(substr($full_name, 0, 2));
                     <a href="../settings/notifications.php" class="nav-link">
                         <i class="fas fa-bell"></i>
                         Notifications
-                         <?php if ($unread_count > 0): ?>
-                            <span class="notification-badge"><?php echo $unread_count; ?></span>
-                        <?php endif; ?>
                     </a>
                     <a href="../auth/logout.php" class="nav-link">
                         <i class="fas fa-sign-out-alt"></i>
@@ -680,34 +764,38 @@ $user_initials = strtoupper(substr($full_name, 0, 2));
             </a>
             <div class="header-info">
                 <h1>Internship Details</h1>
-                <p>Review all information before applying</p>
+                <p>View complete information about this opportunity</p>
             </div>
         </div>
 
         <div class="content">
+            <!-- Profile Warning -->
             <?php if (!$can_apply): ?>
-            <div class="alert" style="background: #fef3c7; border-left: 4px solid #f59e0b; color: #92400e; padding: 1rem 1.5rem; border-radius: 10px; margin-bottom: 1.5rem; display: flex; align-items: center; gap: 0.75rem;">
-                <i class="fas fa-exclamation-triangle"></i>
-                <span>
-                    <strong>Profile Incomplete (<?php echo $profile_completion; ?>%):</strong> 
-                    You must complete your profile to apply for this internship. 
-                    <a href="../dashboard/profile.php" style="color: #92400e; text-decoration: underline; font-weight: 700;">
-                        Complete Profile →
-                    </a>
-                </span>
-            </div>
-        <?php endif; ?>
-            <?php if ($internship['has_applied'] > 0): ?>
-                <div class="alert alert-success">
-                    <i class="fas fa-check-circle"></i>
-                    <span><strong>Already Applied!</strong> You have already submitted your application for this internship.</span>
+                <div class="alert alert-warning">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <span>
+                        <strong>Profile Incomplete (<?php echo $profile_completion; ?>%):</strong> 
+                        You must complete your profile to apply for this internship. 
+                        <a href="../dashboard/profile.php" style="color: #92400e; text-decoration: underline; font-weight: 700;">
+                            Complete Profile →
+                        </a>
+                    </span>
                 </div>
             <?php endif; ?>
 
-            <?php if ($is_full): ?>
-                <div class="alert alert-warning">
-                    <i class="fas fa-exclamation-triangle"></i>
-                    <span><strong>All Positions Filled!</strong> This internship is no longer accepting applications.</span>
+            <!-- Already Applied Alert -->
+            <?php if ($internship['has_applied'] > 0): ?>
+                <div class="alert alert-success">
+                    <i class="fas fa-check-circle"></i>
+                    <span><strong>You have already applied</strong> for this internship. Check your application status in My Applications.</span>
+                </div>
+            <?php endif; ?>
+
+            <!-- Ongoing Internship Alert -->
+            <?php if ($is_ongoing): ?>
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle"></i>
+                    <span><strong>This internship is currently in progress.</strong> The application deadline has passed, but you can view details for future reference.</span>
                 </div>
             <?php endif; ?>
 
@@ -715,14 +803,15 @@ $user_initials = strtoupper(substr($full_name, 0, 2));
             <div class="internship-header">
                 <div class="header-top">
                     <div>
-                        <h1 class="internship-title"><?php echo htmlspecialchars($internship['title']); ?></h1>
-                        <div class="company-info">
-                            <span class="company-name">
+                        <h2 class="internship-title"><?php echo htmlspecialchars($internship['title']); ?></h2>
+                        <div class="company-info-header">
+                            <div class="company-name">
                                 <i class="fas fa-building"></i>
                                 <?php echo htmlspecialchars($internship['company_name']); ?>
-                            </span>
-                            <span class="trust-badge <?php echo $internship['trust_level']; ?>">
-                                <?php echo ucfirst($internship['trust_level']); ?>
+                            </div>
+                            <span class="trust-badge" style="background: <?php echo $trust_display['bg']; ?>; color: <?php echo $trust_display['color']; ?>;">
+                                <i class="fas <?php echo $trust_display['icon']; ?>"></i>
+                                <?php echo $trust_display['text']; ?>
                             </span>
                         </div>
                     </div>
@@ -732,173 +821,252 @@ $user_initials = strtoupper(substr($full_name, 0, 2));
                             <i class="fas fa-bookmark"></i>
                             <?php echo $internship['is_saved'] > 0 ? 'Saved' : 'Save'; ?>
                         </button>
-                          <?php if (!$is_full && $internship['has_applied'] == 0): ?>
+                        
+                        <?php if (!$is_full && !$is_expired && $internship['has_applied'] == 0): ?>
                             <?php if ($can_apply): ?>
                                 <a href="../applications/apply.php?id=<?php echo $internship['id']; ?>" class="btn btn-primary">
                                     <i class="fas fa-paper-plane"></i> Apply Now
                                 </a>
                             <?php else: ?>
-                                <a href="../dashboard/profile.php" class="btn" style="background: #fef3c7; color: #92400e;">
+                                <a href="../dashboard/profile.php" class="btn btn-warning">
                                     <i class="fas fa-exclamation-triangle"></i> Complete Profile First
                                 </a>
                             <?php endif; ?>
+                        <?php elseif ($is_full): ?>
+                            <button class="btn btn-disabled" disabled>
+                                <i class="fas fa-times-circle"></i> Positions Filled
+                            </button>
+                        <?php elseif ($is_expired || $is_ongoing): ?>
+                            <button class="btn btn-disabled" disabled>
+                                <i class="fas fa-clock"></i> Application Closed
+                            </button>
                         <?php endif; ?>
                     </div>
                 </div>
 
-                <div class="meta-grid">
+                <div class="header-meta">
                     <div class="meta-item">
-                        <span class="meta-label">Location</span>
-                        <span class="meta-value">
+                        <div class="meta-icon">
                             <i class="fas fa-map-marker-alt"></i>
-                            <?php echo htmlspecialchars($internship['location']); ?>
-                        </span>
-                    </div>
-                    <div class="meta-item">
-                        <span class="meta-label">Work Mode</span>
-                        <span class="meta-value">
-                            <i class="fas fa-laptop-house"></i>
-                            <?php echo $internship['location_type']; ?>
-                        </span>
-                    </div>
-                    <div class="meta-item">
-                        <span class="meta-label">Duration</span>
-                        <span class="meta-value">
-                            <i class="fas fa-calendar-alt"></i>
-                            <?php echo $internship['duration']; ?>
-                        </span>
-                    </div>
-                    <div class="meta-item">
-                        <span class="meta-label">Stipend</span>
-                        <span class="meta-value">
-                            <i class="fas fa-money-bill-wave"></i>
-                            <?php echo htmlspecialchars($internship['stipend']); ?>
-                        </span>
-                    </div>
-                    <div class="meta-item">
-                        <span class="meta-label">Type</span>
-                        <span class="meta-value">
-                            <i class="fas fa-briefcase"></i>
-                            <?php echo $internship['internship_type']; ?>
-                        </span>
-                    </div>
-                    <div class="meta-item">
-                        <span class="meta-label">Positions</span>
-                        <span class="meta-value">
-                            <i class="fas fa-users"></i>
-                            <?php echo $internship['positions_available']; ?> openings
-                        </span>
-                    </div>
-                    <div class="meta-item">
-                        <span class="meta-label">Deadline</span>
-                        <span class="meta-value">
-                            <i class="fas fa-clock"></i>
-                            <?php echo date('M d, Y', strtotime($internship['application_deadline'])); ?>
-                        </span>
-                    </div>
-                    <div class="meta-item">
-                        <span class="meta-label">Posted</span>
-                        <span class="meta-value">
-                            <i class="fas fa-calendar-plus"></i>
-                            <?php echo date('M d, Y', strtotime($internship['created_at'])); ?>
-                        </span>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Description -->
-            <div class="section-card">
-                <h2 class="section-title">
-                    <i class="fas fa-align-left"></i>
-                    About the Internship
-                </h2>
-                <div class="section-content">
-                    <?php echo nl2br(htmlspecialchars($internship['description'])); ?>
-                </div>
-            </div>
-
-            <!-- Requirements -->
-            <div class="section-card">
-                <h2 class="section-title">
-                    <i class="fas fa-clipboard-check"></i>
-                    Requirements & Eligibility
-                </h2>
-                <div class="section-content">
-                    <?php echo nl2br(htmlspecialchars($internship['requirements'])); ?>
-                </div>
-            </div>
-
-            <!-- Skills Required -->
-            <div class="section-card">
-                <h2 class="section-title">
-                    <i class="fas fa-tools"></i>
-                    Skills Required
-                </h2>
-                <div class="skills-grid">
-                    <?php 
-                    $skills = explode(',', $internship['skills_required']);
-                    foreach ($skills as $skill): 
-                    ?>
-                        <span class="skill-tag"><?php echo trim($skill); ?></span>
-                    <?php endforeach; ?>
-                </div>
-            </div>
-
-            <!-- Company Details -->
-            <div class="section-card">
-                <h2 class="section-title">
-                    <i class="fas fa-building"></i>
-                    About <?php echo htmlspecialchars($internship['company_name']); ?>
-                </h2>
-                <div class="company-details-grid">
-                    <?php if (!empty($internship['industry'])): ?>
-                    <div class="detail-item">
-                        <div class="detail-label">Industry</div>
-                        <div class="detail-value"><?php echo htmlspecialchars($internship['industry']); ?></div>
-                    </div>
-                    <?php endif; ?>
-                    
-                    <?php if (!empty($internship['company_size'])): ?>
-                    <div class="detail-item">
-                        <div class="detail-label">Company Size</div>
-                        <div class="detail-value"><?php echo htmlspecialchars($internship['company_size']); ?> employees</div>
-                    </div>
-                    <?php endif; ?>
-                    
-                    <?php if (!empty($internship['website'])): ?>
-                    <div class="detail-item">
-                        <div class="detail-label">Website</div>
-                        <div class="detail-value">
-                            <a href="<?php echo htmlspecialchars($internship['website']); ?>" target="_blank" style="color: #667eea; text-decoration: none;">
-                                Visit Website <i class="fas fa-external-link-alt"></i>
-                            </a>
+                        </div>
+                        <div class="meta-content">
+                            <span class="meta-label">Location</span>
+                            <span class="meta-value"><?php echo htmlspecialchars($internship['location']); ?></span>
                         </div>
                     </div>
-                    <?php endif; ?>
+                    <div class="meta-item">
+                        <div class="meta-icon">
+                            <i class="fas fa-laptop-house"></i>
+                        </div>
+                        <div class="meta-content">
+                            <span class="meta-label">Work Mode</span>
+                            <span class="meta-value"><?php echo $internship['location_type']; ?></span>
+                        </div>
+                    </div>
+                    <div class="meta-item">
+                        <div class="meta-icon">
+                            <i class="fas fa-calendar-alt"></i>
+                        </div>
+                        <div class="meta-content">
+                            <span class="meta-label">Duration</span>
+                            <span class="meta-value"><?php echo $internship['duration']; ?></span>
+                        </div>
+                    </div>
+                    <div class="meta-item">
+                        <div class="meta-icon">
+                            <i class="fas fa-money-bill-wave"></i>
+                        </div>
+                        <div class="meta-content">
+                            <span class="meta-label">Stipend</span>
+                            <span class="meta-value"><?php echo htmlspecialchars($internship['stipend']); ?></span>
+                        </div>
+                    </div>
+                    <div class="meta-item">
+                        <div class="meta-icon">
+                            <i class="fas fa-users"></i>
+                        </div>
+                        <div class="meta-content">
+                            <span class="meta-label">Positions</span>
+                            <span class="meta-value"><?php echo $positions_left; ?> / <?php echo $internship['positions_available']; ?> left</span>
+                        </div>
+                    </div>
+                    <div class="meta-item">
+                        <div class="meta-icon">
+                            <i class="fas fa-clock"></i>
+                        </div>
+                        <div class="meta-content">
+                            <span class="meta-label">Deadline</span>
+                            <span class="meta-value"><?php echo date('M d, Y', strtotime($internship['application_deadline'])); ?></span>
+                        </div>
+                    </div>
+
+                     <div class="meta-item">
+                        <div class="meta-icon">
+                            <i class="fas fa-clock"></i>
+                        </div>
+                        <div class="meta-content">
+                            <span class="meta-label">Start Date</span>
+                            <span class="meta-value"><?php echo date('M d, Y', strtotime($internship['start_date'])); ?></span>
+                        </div>
+                    </div>
+                     <div class="meta-item">
+                        <div class="meta-icon">
+                            <i class="fas fa-clock"></i>
+                        </div>
+                        <div class="meta-content">
+                            <span class="meta-label">End Date</span>
+                            <span class="meta-value"><?php echo date('M d, Y', strtotime($internship['end_date'])); ?></span>
+                        </div>
+                    </div>
                 </div>
             </div>
 
-            <div style="height: 100px;"></div>
-        </div>
-    </div>
+            <!-- Content Grid -->
+            <div class="content-grid">
+                <!-- Left Column -->
+                <div>
+                    <!-- Description -->
+                    <div class="section-card">
+                        <h3 class="section-title">
+                            <i class="fas fa-file-alt"></i>
+                            Description
+                        </h3>
+                        <div class="section-content">
+                            <?php echo nl2br(htmlspecialchars($internship['description'])); ?>
+                        </div>
+                    </div>
 
-    <!-- Sticky Apply Bar -->
-    <?php if (!$is_full && $internship['has_applied'] == 0): ?>
-    <div class="sticky-apply-bar">
-        <div class="positions-info">
-            <strong><?php echo $positions_left; ?></strong> / <?php echo $internship['positions_available']; ?> positions remaining
+                    <!-- Skills Required -->
+                    <div class="section-card">
+                        <h3 class="section-title">
+                            <i class="fas fa-code"></i>
+                            Skills Required
+                        </h3>
+                        <div class="skills-grid">
+                            <?php 
+                            $skills = explode(',', $internship['skills_required']);
+                            foreach ($skills as $skill): 
+                            ?>
+                                <span class="skill-tag"><?php echo trim($skill); ?></span>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+
+                    <!-- Requirements -->
+                    <div class="section-card">
+                        <h3 class="section-title">
+                            <i class="fas fa-list-check"></i>
+                            Requirements
+                        </h3>
+                        <ul class="requirements-list">
+                            <?php 
+                            $requirements = explode("\n", $internship['requirements']);
+                            foreach ($requirements as $req): 
+                                if (trim($req)):
+                            ?>
+                                <li>
+                                    <i class="fas fa-check-circle"></i>
+                                    <span><?php echo htmlspecialchars($req); ?></span>
+                                </li>
+                            <?php 
+                                endif;
+                            endforeach; 
+                            ?>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Right Column - Company Info -->
+                <div>
+                    <div class="company-card">
+                        <h3 class="company-card-title">
+                            <i class="fas fa-building"></i>
+                            About Company
+                        </h3>
+
+                        <div class="company-detail">
+                            <div class="company-detail-icon">
+                                <i class="fas fa-briefcase"></i>
+                            </div>
+                            <div class="company-detail-content">
+                                <div class="company-detail-label">Industry</div>
+                                <div class="company-detail-value"><?php echo htmlspecialchars($internship['industry'] ?? 'Not specified'); ?></div>
+                            </div>
+                        </div>
+
+                        <div class="company-detail">
+                            <div class="company-detail-icon">
+                                <i class="fas fa-users"></i>
+                            </div>
+                            <div class="company-detail-content">
+                                <div class="company-detail-label">Company Size</div>
+                                <div class="company-detail-value"><?php echo htmlspecialchars($internship['company_size'] ?? 'Not specified'); ?></div>
+                            </div>
+                        </div>
+
+                        <?php if (!empty($internship['company_address'])): ?>
+                        <div class="company-detail">
+                            <div class="company-detail-icon">
+                                <i class="fas fa-map-marker-alt"></i>
+                            </div>
+                            <div class="company-detail-content">
+                                <div class="company-detail-label">Address</div>
+                                <div class="company-detail-value"><?php echo htmlspecialchars($internship['company_address']); ?></div>
+                            </div>
+                        </div>
+                        <?php endif; ?>
+
+                        <?php if (!empty($internship['founded_year'])): ?>
+                        <div class="company-detail">
+                            <div class="company-detail-icon">
+                                <i class="fas fa-calendar"></i>
+                            </div>
+                            <div class="company-detail-content">
+                                <div class="company-detail-label">Founded</div>
+                                <div class="company-detail-value"><?php echo $internship['founded_year']; ?></div>
+                            </div>
+                        </div>
+                        <?php endif; ?>
+
+                        <?php if (!empty($internship['website'])): ?>
+                        <div class="company-detail">
+                            <div class="company-detail-icon">
+                                <i class="fas fa-globe"></i>
+                            </div>
+                            <div class="company-detail-content">
+                                <div class="company-detail-label">Website</div>
+                                <div class="company-detail-value">
+                                    <a href="<?php echo htmlspecialchars($internship['website']); ?>" target="_blank" style="color: #667eea; text-decoration: none;">
+                                        Visit Website <i class="fas fa-external-link-alt" style="font-size: 0.8rem;"></i>
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                        <?php endif; ?>
+
+                        <?php if (!empty($internship['company_description'])): ?>
+                        <div class="company-description">
+                            <div class="company-detail-label" style="margin-bottom: 0.5rem;">About</div>
+                            <?php echo nl2br(htmlspecialchars($internship['company_description'])); ?>
+                        </div>
+                        <?php endif; ?>
+
+                        <!-- Company Stats -->
+                        <div class="company-stats">
+                            <div class="stat-item">
+                                <div class="stat-value"><?php echo $company_stats['total_postings']; ?></div>
+                                <div class="stat-label">Total Postings</div>
+                            </div>
+                            <!-- <div class="stat-item">
+                                <div class="stat-value"><?php echo $company_stats['total_hires']; ?></div>
+                                <div class="stat-label">Total Hires</div>
+                            </div> -->
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
-        <?php if ($can_apply): ?>
-        <a href="../applications/apply.php?id=<?php echo $internship['id']; ?>" class="btn btn-primary" style="padding: 1rem 2rem; font-size: 1rem;">
-            <i class="fas fa-paper-plane"></i> Apply for this Internship
-        </a>
-    <?php else: ?>
-        <a href="../dashboard/profile.php" class="btn" style="background: #fef3c7; color: #92400e; padding: 1rem 2rem; font-size: 1rem;">
-            <i class="fas fa-exclamation-triangle"></i> Complete Profile to Apply (<?php echo $profile_completion; ?>%)
-        </a>
-    <?php endif; ?>
     </div>
-    <?php endif; ?>
 
     <script>
         function toggleSave(internshipId, button) {
