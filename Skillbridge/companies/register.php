@@ -32,13 +32,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $confirm_password = $_POST['confirm_password'];
     $industry = trim($_POST['industry']);
     $website = trim($_POST['website']);
+    $founded_year = trim($_POST['founded_year']);
     $company_size = $_POST['company_size'];
     $address = trim($_POST['address']);
     $description = trim($_POST['description']);
 
     // Validation
     if (empty($username) || empty($company_name) || empty($contact_person) ||
-        empty($email) || empty($phone) || empty($password) || empty($industry)) {
+        empty($email) || empty($phone) || empty($password) || empty($industry) || empty($founded_year)) {
         $error = 'All required fields must be filled.';
     } elseif ($password !== $confirm_password) {
         $error = 'Passwords do not match.';
@@ -110,8 +111,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $user_id = $conn->insert_id;
 
                     // Insert company profile
-                    $company_stmt = $conn->prepare("INSERT INTO companies (user_id, name, email, phone, website, address, industry, company_size, description, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')");
-                    $company_stmt->bind_param("issssssss", $user_id, $company_name, $email, $phone, $website, $address, $industry, $company_size, $description);
+                    $company_stmt = $conn->prepare("INSERT INTO companies (user_id, name, email, phone, website,founded_year, address, industry, company_size, description, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?,?, 'pending')");
+                    $company_stmt->bind_param("isssssssss", $user_id, $company_name, $email, $phone, $website,$founded_year, $address, $industry, $company_size, $description);
                     $company_stmt->execute();
 
                     // Send welcome email
@@ -555,14 +556,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
 
                 <!-- Website -->
-                <div class="col-12">
-                    <label for="website" class="form-label">
+                
+
+                <div class="col-md-6">
+                     <label for="website" class="form-label">
                         <i class="fas fa-globe"></i> Company Website
                     </label>
                     <input type="url" id="website" name="website" class="form-control"
                            value="<?php echo isset($website) ? htmlspecialchars($website) : ''; ?>"
                            placeholder="https://www.company.com">
                     <div class="form-text">Optional but recommended</div>
+                </div>
+                <div class="col-md-6">
+                    <label for="founded_year" class="form-label">
+                        <i class="fas fa-calendar"></i> Company Established Year *
+                    </label>
+                    <input type="text" id="usfounded_year" name="founded_year" class="form-control"
+                           value="<?php echo isset($founded_year) ? htmlspecialchars($founded_year) : ''; ?>"
+                           placeholder="E.g. 2020" required>
                 </div>
 
                 <!-- Address -->
