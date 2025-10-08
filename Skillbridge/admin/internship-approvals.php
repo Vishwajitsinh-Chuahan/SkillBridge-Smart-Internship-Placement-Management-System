@@ -13,6 +13,7 @@ $success_message = '';
 $error_message = '';
 
 // ✅ UPDATED: Handle Approve Action with start_date logic
+//trust level logic
 if (isset($_POST['approve_internship'])) {
     $internship_id = (int)$_POST['internship_id'];
     
