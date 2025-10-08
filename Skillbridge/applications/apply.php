@@ -82,7 +82,7 @@ if ($stmt->execute()) {
     header('Location: my-applications.php');
     exit();
 } else {
-    $_SESSION['error'] = 'Failed to submit application. Please try again.';
+    $_SESSION['error'] = 'Failed to submit application. Please try again...!';
     header('Location: ../internships/view-details.php?id=' . $internship_id);
     exit();
 }
