@@ -72,6 +72,7 @@ try {
                 'phone' => $company_data['phone'] ?? '',
                 'industry' => $company_data['industry'] ?? '',
                 'website' => $company_data['website'] ?? '',
+                'founded_year' => $company_data['founded_year'] ?? '',
                 'address' => $company_data['address'] ?? '',
                 'company_size' => $company_data['company_size'] ?? '',
                 'description' => $company_data['description'] ?? '',
@@ -85,6 +86,7 @@ try {
                 'phone' => '',
                 'industry' => '',
                 'website' => '',
+                'founded_year' => '',
                 'address' => '',
                 'company_size' => '',
                 'description' => '',
@@ -201,6 +203,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $phone = trim($_POST['phone'] ?? '');
                 $industry = trim($_POST['industry'] ?? '');
                 $website = trim($_POST['website'] ?? '');
+                $founded_year = trim($_POST['founded_year'] ?? '');
                 $address = trim($_POST['address'] ?? '');
                 $company_size = trim($_POST['company_size'] ?? '');
                 $description = trim($_POST['description'] ?? '');
@@ -212,11 +215,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $exists = $stmt->get_result()->num_rows > 0;
                 
                 if ($exists) {
-                    $stmt = $conn->prepare("UPDATE companies SET name=?, email=?, phone=?, industry=?, website=?, address=?, company_size=?, description=? WHERE user_id=?");
-                    $stmt->bind_param("ssssssssi", $name, $email, $phone, $industry, $website, $address, $company_size, $description, $user_id);
+                    $stmt = $conn->prepare("UPDATE companies SET name=?, email=?, phone=?, industry=?, website=?,founded_year =?, address=?, company_size=?, description=? WHERE user_id=?");
+                    $stmt->bind_param("sssssssssi", $name, $email, $phone, $industry, $website, $founded_year, $address, $company_size, $description, $user_id);
                 } else {
-                    $stmt = $conn->prepare("INSERT INTO companies (user_id, name, email, phone, industry, website, address, company_size, description, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', NOW())");
-                    $stmt->bind_param("issssssss", $user_id, $name, $email, $phone, $industry, $website, $address, $company_size, $description);
+                    $stmt = $conn->prepare("INSERT INTO companies (user_id, name, email, phone, industry, website,founded_year, address, company_size, description, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?,?, 'pending', NOW())");
+                    $stmt->bind_param("isssssssss", $user_id, $name, $email, $phone, $industry, $website,$founded_year, $address, $company_size, $description);
                 }
                 
                 if ($stmt->execute()) {
@@ -227,6 +230,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'phone' => $phone,
                         'industry' => $industry,
                         'website' => $website,
+                        'website' => $founded_year,
                         'address' => $address,
                         'company_size' => $company_size,
                         'description' => $description
@@ -1015,12 +1019,22 @@ if (strpos($full_name, ' ') !== false) {
                                 </div>
                             </div>
                             
-                            <div class="form-group form-group-full">
+                            <div class="form-grid">
+                                <div class="form-group">
                                 <label for="website" class="form-label">Website URL</label>
                                 <input type="url" id="website" name="website" class="form-control" 
                                        value="<?php echo htmlspecialchars($profile_data['website'] ?? ''); ?>" 
                                        placeholder="http://www.dynatech.com">
                                 <small style="color: #64748b; font-size: 0.75rem;">Include http:// or https://</small>
+                            </div>
+                            
+                                <div class="form-group">
+                                    <label for="founded_year" class="form-label">Copmany Established Year *</label>
+                                    <input type="text" id="founded_year" name="founded_year" class="form-control" 
+                                           value="<?php echo htmlspecialchars($profile_data['founded_year'] ?? ''); ?>" 
+                                           placeholder="e.g. 2020" required>
+                
+                                </div>
                             </div>
                             
                             <div class="form-group form-group-full">
