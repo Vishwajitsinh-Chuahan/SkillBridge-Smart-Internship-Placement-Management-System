@@ -24,6 +24,7 @@ $query = "
         c.industry,
         c.company_size,
         c.website,
+        c.founded_year,
         c.address,
         c.trust_level,
         c.approved_posts_count,
@@ -473,6 +474,11 @@ function getStatusColor($status) {
                     <div class="info-row">
                         <div class="info-label">Company Size</div>
                         <div class="info-value"><?php echo htmlspecialchars($internship['company_size']); ?></div>
+                    </div>
+
+                    <div class="info-row">
+                        <div class="info-label">Company Established Year</div>
+                        <div class="info-value"><?php echo htmlspecialchars($internship['founded_year']); ?></div>
                     </div>
 
                     <div class="info-row">
