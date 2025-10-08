@@ -3,7 +3,6 @@ session_start();
 require_once '../config/database.php';
 require_once '../includes/profile_functions.php';
 
-
 // Check if user is logged in and is a student
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'Student') {
     header('Location: ../auth/login.php');
@@ -13,18 +12,24 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'Student') {
 $user_id = $_SESSION['user_id'];
 $full_name = $_SESSION['full_name'] ?? 'Student';
 
+// Profile completion check
 $can_apply = canApplyForInternships($user_id, $conn);
 
 $stmt = $conn->prepare("SELECT * FROM users WHERE id = ?");
 $stmt->bind_param("i", $user_id);
 $stmt->execute();
 $user_data = $stmt->get_result()->fetch_assoc();
+
 $stmt = $conn->prepare("SELECT * FROM student_profiles WHERE user_id = ?");
 $stmt->bind_param("i", $user_id);
 $stmt->execute();
 $profile_result = $stmt->get_result();
 $profile_data = $profile_result->num_rows > 0 ? $profile_result->fetch_assoc() : null;
+
 $profile_completion = calculateProfileCompletion($user_data, $profile_data);
+
+// Get tab filter
+$tab = $_GET['tab'] ?? 'current';
 
 // Get filter parameters
 $search = trim($_GET['search'] ?? '');
@@ -34,8 +39,8 @@ $location_type = $_GET['location_type'] ?? '';
 $duration = $_GET['duration'] ?? '';
 $company_filter = $_GET['company'] ?? '';
 
-// Build query with filters
-$query = "
+// Base query for all tabs
+$base_query = "
     SELECT 
         i.*,
         c.name as company_name,
@@ -47,71 +52,82 @@ $query = "
     FROM internships i
     JOIN companies c ON i.company_id = c.user_id
     WHERE i.status IN ('approved', 'active')
-    AND i.application_deadline >= CURDATE()
 ";
 
 $params = [$user_id, $user_id];
 $types = 'ii';
 
-// Apply search filter
+// Tab-specific conditions
+if ($tab === 'current') {
+    // Current: Can apply (deadline not passed)
+    $base_query .= " AND i.application_deadline >= CURDATE()";
+} elseif ($tab === 'active') {
+    // Active: Deadline passed but internship ongoing
+    $base_query .= " AND i.application_deadline < CURDATE()
+                     AND i.start_date <= CURDATE()
+                     AND (i.end_date IS NULL OR i.end_date >= CURDATE())";
+} elseif ($tab === 'past') {
+    // Past: Internship ended
+    $base_query .= " AND i.end_date IS NOT NULL AND i.end_date < CURDATE()";
+}
+
+// Apply filters
 if (!empty($search)) {
-    $query .= " AND (i.title LIKE ? OR i.description LIKE ? OR i.skills_required LIKE ?)";
-    $search_param = "%{$search}%";
-    $params[] = $search_param;
-    $params[] = $search_param;
-    $params[] = $search_param;
+    $search_term = "%$search%";
+    $base_query .= " AND (i.title LIKE ? OR i.description LIKE ? OR i.skills_required LIKE ?)";
+    $params = array_merge($params, [$search_term, $search_term, $search_term]);
     $types .= 'sss';
 }
 
-// Apply location filter
 if (!empty($location)) {
-    $query .= " AND i.location LIKE ?";
-    $params[] = "%{$location}%";
+    $location_term = "%$location%";
+    $base_query .= " AND i.location LIKE ?";
+    $params[] = $location_term;
     $types .= 's';
 }
 
-// Apply internship type filter
 if (!empty($internship_type)) {
-    $query .= " AND i.internship_type = ?";
+    $base_query .= " AND i.internship_type = ?";
     $params[] = $internship_type;
     $types .= 's';
 }
 
-// Apply location type filter
 if (!empty($location_type)) {
-    $query .= " AND i.location_type = ?";
+    $base_query .= " AND i.location_type = ?";
     $params[] = $location_type;
     $types .= 's';
 }
 
-// Apply duration filter
 if (!empty($duration)) {
-    $query .= " AND i.duration LIKE ?";
-    $params[] = "%{$duration}%";
+    $base_query .= " AND i.duration = ?";
+    $params[] = $duration;
     $types .= 's';
 }
 
-// Apply company filter
 if (!empty($company_filter)) {
-    $query .= " AND c.name LIKE ?";
-    $params[] = "%{$company_filter}%";
+    $base_query .= " AND c.name LIKE ?";
+    $company_term = "%$company_filter%";
+    $params[] = $company_term;
     $types .= 's';
 }
 
-$query .= " ORDER BY i.created_at DESC";
+$base_query .= " ORDER BY i.created_at DESC";
 
 // Execute query
-$stmt = $conn->prepare($query);
-$stmt->bind_param($types, ...$params);
+$stmt = $conn->prepare($base_query);
+if (!empty($params)) {
+    $stmt->bind_param($types, ...$params);
+}
 $stmt->execute();
 $internships = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
-// Get statistics
-$total_active = count($internships);
+// Get counts for each tab
+$current_count = $conn->query("SELECT COUNT(*) as count FROM internships WHERE status IN ('approved', 'active') AND application_deadline >= CURDATE()")->fetch_assoc()['count'];
+$active_count = $conn->query("SELECT COUNT(*) as count FROM internships WHERE status IN ('approved', 'active') AND application_deadline < CURDATE() AND start_date <= CURDATE() AND (end_date IS NULL OR end_date >= CURDATE())")->fetch_assoc()['count'];
+$past_count = $conn->query("SELECT COUNT(*) as count FROM internships WHERE status IN ('approved', 'active') AND end_date IS NOT NULL AND end_date < CURDATE()")->fetch_assoc()['count'];
 
 // Get user initials
 $user_initials = strtoupper(substr($full_name, 0, 2));
-
 ?>
 
 <!DOCTYPE html>
@@ -312,6 +328,75 @@ $user_initials = strtoupper(substr($full_name, 0, 2));
             padding: 2rem;
         }
 
+        /* Alert */
+        .alert {
+            padding: 1rem 1.5rem;
+            border-radius: 10px;
+            margin-bottom: 2rem;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .alert-warning {
+            background: #fef3c7;
+            border-left: 4px solid #f59e0b;
+            color: #92400e;
+        }
+
+        /* Tab Navigation */
+        .tab-navigation {
+            background: white;
+            border-radius: 12px;
+            padding: 1rem;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            margin-bottom: 2rem;
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .tab-btn {
+            flex: 1;
+            padding: 1rem 1.5rem;
+            border-radius: 8px;
+            border: 2px solid #e2e8f0;
+            background: white;
+            color: #475569;
+            font-weight: 600;
+            font-size: 0.95rem;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-decoration: none;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .tab-btn:hover {
+            border-color: #667eea;
+            background: #f1f5f9;
+        }
+
+        .tab-btn.active {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            border-color: #667eea;
+        }
+
+        .tab-icon {
+            font-size: 1.5rem;
+        }
+
+        .tab-label {
+            font-size: 0.9rem;
+        }
+
+        .tab-count {
+            font-size: 0.8rem;
+            opacity: 0.8;
+        }
+
         /* Filters Card */
         .filters-card {
             background: white;
@@ -321,33 +406,35 @@ $user_initials = strtoupper(substr($full_name, 0, 2));
             margin-bottom: 2rem;
         }
 
-        .filters-header {
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-            margin-bottom: 1.5rem;
-            color: #1e293b;
+        .filters-title {
             font-size: 1.1rem;
             font-weight: 700;
+            color: #1e293b;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
         }
 
         .filters-grid {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
             gap: 1rem;
-            margin-bottom: 1rem;
         }
 
-        .filter-group label {
-            display: block;
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .filter-label {
             font-size: 0.85rem;
             font-weight: 600;
             color: #475569;
-            margin-bottom: 0.5rem;
         }
 
         .filter-input {
-            width: 100%;
             padding: 0.75rem;
             border: 2px solid #e2e8f0;
             border-radius: 8px;
@@ -358,14 +445,12 @@ $user_initials = strtoupper(substr($full_name, 0, 2));
         .filter-input:focus {
             outline: none;
             border-color: #667eea;
-            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
         }
 
         .filter-actions {
             display: flex;
-            gap: 1rem;
-            padding-top: 1rem;
-            border-top: 1px solid #e2e8f0;
+            gap: 0.75rem;
+            margin-top: 1rem;
         }
 
         .btn {
@@ -401,28 +486,9 @@ $user_initials = strtoupper(substr($full_name, 0, 2));
             background: #cbd5e1;
         }
 
-        /* Stats Bar */
-        .stats-bar {
-            background: white;
-            padding: 1rem 1.5rem;
-            border-radius: 12px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-            margin-bottom: 2rem;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .stats-bar h3 {
-            color: #1e293b;
-            font-size: 1.1rem;
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-        }
-
-        .stats-bar h3 i {
-            color: #667eea;
+        .btn-sm {
+            padding: 0.5rem 1rem;
+            font-size: 0.85rem;
         }
 
         /* Internships Grid */
@@ -448,10 +514,23 @@ $user_initials = strtoupper(substr($full_name, 0, 2));
             border-color: #667eea;
         }
 
+        .card-badge {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            padding: 0.35rem 0.85rem;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        .badge-upcoming { background: #dbeafe; color: #1e40af; }
+        .badge-current { background: #d1fae5; color: #065f46; }
+        .badge-active { background: #fef3c7; color: #92400e; }
+        .badge-past { background: #e5e7eb; color: #374151; }
+
         .card-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: start;
             margin-bottom: 1rem;
         }
 
@@ -462,26 +541,18 @@ $user_initials = strtoupper(substr($full_name, 0, 2));
             margin-bottom: 0.5rem;
         }
 
+        .company-info {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 0.75rem;
+        }
+
         .company-name {
             color: #667eea;
             font-size: 0.9rem;
             font-weight: 600;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
         }
-
-        .trust-badge {
-            padding: 0.25rem 0.75rem;
-            border-radius: 20px;
-            font-size: 0.7rem;
-            font-weight: 700;
-            text-transform: uppercase;
-        }
-
-        .trust-badge.new { background: #dbeafe; color: #1e40af; }
-        .trust-badge.verified { background: #d1fae5; color: #065f46; }
-        .trust-badge.trusted { background: #fef3c7; color: #92400e; }
 
         .card-meta {
             display: flex;
@@ -500,17 +571,6 @@ $user_initials = strtoupper(substr($full_name, 0, 2));
 
         .meta-item i {
             color: #667eea;
-        }
-
-        .card-description {
-            color: #64748b;
-            font-size: 0.9rem;
-            line-height: 1.6;
-            margin-bottom: 1rem;
-            display: -webkit-box;
-            -webkit-line-clamp: 3;
-            -webkit-box-orient: vertical;
-            overflow: hidden;
         }
 
         .card-skills {
@@ -541,12 +601,13 @@ $user_initials = strtoupper(substr($full_name, 0, 2));
         }
 
         .positions-info {
-            font-size: 0.85rem;
+            font-size: 0.9rem;
             color: #64748b;
         }
 
         .positions-info strong {
             color: #1e293b;
+            font-size: 1.1rem;
         }
 
         .positions-full {
@@ -559,15 +620,9 @@ $user_initials = strtoupper(substr($full_name, 0, 2));
             gap: 0.5rem;
         }
 
-        .btn-sm {
-            padding: 0.5rem 1rem;
-            font-size: 0.85rem;
-        }
-
         .btn-save {
             background: #f1f5f9;
             color: #475569;
-            border: none;
         }
 
         .btn-save:hover {
@@ -588,19 +643,27 @@ $user_initials = strtoupper(substr($full_name, 0, 2));
             background: #5568d3;
         }
 
-        .applied-badge {
-            position: absolute;
-            top: 1rem;
-            right: 1rem;
-            background: #10b981;
-            color: white;
-            padding: 0.5rem 1rem;
-            border-radius: 20px;
-            font-size: 0.75rem;
-            font-weight: 700;
+        .btn-warning {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .btn-warning:hover {
+            background: #fde68a;
+        }
+
+        .deadline-info {
+            font-size: 0.8rem;
+            color: #64748b;
+            margin-top: 0.5rem;
             display: flex;
             align-items: center;
             gap: 0.5rem;
+        }
+
+        .deadline-passed {
+            color: #ef4444;
+            font-weight: 600;
         }
 
         .empty-state {
@@ -625,7 +688,6 @@ $user_initials = strtoupper(substr($full_name, 0, 2));
 
         .empty-state p {
             color: #94a3b8;
-            margin-bottom: 1.5rem;
         }
 
         @media (max-width: 1200px) {
@@ -705,9 +767,6 @@ $user_initials = strtoupper(substr($full_name, 0, 2));
                     <a href="../settings/notifications.php" class="nav-link">
                         <i class="fas fa-bell"></i>
                         Notifications
-                         <?php if ($unread_count > 0): ?>
-                            <span class="notification-badge"><?php echo $unread_count; ?></span>
-                        <?php endif; ?>
                     </a>
                     <a href="../auth/logout.php" class="nav-link">
                         <i class="fas fa-sign-out-alt"></i>
@@ -740,45 +799,66 @@ $user_initials = strtoupper(substr($full_name, 0, 2));
         </div>
 
         <div class="content">
-             <?php if (!$can_apply): ?>
-            <div class="alert" style="background: #fef3c7; border-left: 4px solid #f59e0b; color: #92400e; margin-bottom: 2rem; padding: 1rem 1.5rem; border-radius: 10px; display: flex; align-items: center; gap: 0.75rem;">
-                <i class="fas fa-exclamation-triangle"></i>
-                <span>
-                    <strong>Profile Incomplete (<?php echo $profile_completion; ?>%):</strong> 
-                    Complete your profile to apply for internships. 
-                    <a href="../dashboard/profile.php" style="color: #92400e; text-decoration: underline; font-weight: 700;">
-                        Complete Now →
-                    </a>
-                </span>
+            <!-- Profile Warning -->
+            <?php if (!$can_apply): ?>
+                <div class="alert alert-warning">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <span>
+                        <strong>Profile Incomplete (<?php echo $profile_completion; ?>%):</strong> 
+                        Complete your profile to apply for internships. 
+                        <a href="../dashboard/profile.php" style="color: #92400e; text-decoration: underline; font-weight: 700;">
+                            Complete Now →
+                        </a>
+                    </span>
+                </div>
+            <?php endif; ?>
+
+            <!-- Tab Navigation -->
+            <div class="tab-navigation">
+                <a href="?tab=current" class="tab-btn <?php echo $tab === 'current' ? 'active' : ''; ?>">
+                    <div class="tab-icon">📝</div>
+                    <div class="tab-label">Current</div>
+                    <div class="tab-count"><?php echo $current_count; ?> opportunities</div>
+                </a>
+                <a href="?tab=active" class="tab-btn <?php echo $tab === 'active' ? 'active' : ''; ?>">
+                    <div class="tab-icon">🏃</div>
+                    <div class="tab-label">Active</div>
+                    <div class="tab-count"><?php echo $active_count; ?> ongoing</div>
+                </a>
+                <a href="?tab=past" class="tab-btn <?php echo $tab === 'past' ? 'active' : ''; ?>">
+                    <div class="tab-icon">📚</div>
+                    <div class="tab-label">Past</div>
+                    <div class="tab-count"><?php echo $past_count; ?> archived</div>
+                </a>
             </div>
-        <?php endif; ?>
+
             <!-- Filters Card -->
             <div class="filters-card">
-                <div class="filters-header">
+                <div class="filters-title">
                     <i class="fas fa-filter"></i>
                     Filter Internships
                 </div>
-                <form method="GET" action="">
+                <form method="GET" action="browse.php">
+                    <input type="hidden" name="tab" value="<?php echo $tab; ?>">
                     <div class="filters-grid">
                         <div class="filter-group">
-                            <label><i class="fas fa-search"></i> Search Keywords</label>
-                            <input type="text" name="search" class="filter-input" placeholder="Job title, skills..." value="<?php echo htmlspecialchars($search); ?>">
+                            <label class="filter-label">Search</label>
+                            <input type="text" name="search" class="filter-input" placeholder="Title, skills..." value="<?php echo htmlspecialchars($search); ?>">
                         </div>
                         <div class="filter-group">
-                            <label><i class="fas fa-map-marker-alt"></i> Location</label>
+                            <label class="filter-label">Location</label>
                             <input type="text" name="location" class="filter-input" placeholder="City, state..." value="<?php echo htmlspecialchars($location); ?>">
                         </div>
                         <div class="filter-group">
-                            <label><i class="fas fa-briefcase"></i> Type</label>
+                            <label class="filter-label">Type</label>
                             <select name="type" class="filter-input">
                                 <option value="">All Types</option>
                                 <option value="Internship" <?php echo $internship_type === 'Internship' ? 'selected' : ''; ?>>Internship</option>
                                 <option value="Job" <?php echo $internship_type === 'Job' ? 'selected' : ''; ?>>Job</option>
-                                <option value="Both" <?php echo $internship_type === 'Both' ? 'selected' : ''; ?>>Both</option>
                             </select>
                         </div>
                         <div class="filter-group">
-                            <label><i class="fas fa-laptop-house"></i> Work Mode</label>
+                            <label class="filter-label">Work Mode</label>
                             <select name="location_type" class="filter-input">
                                 <option value="">All Modes</option>
                                 <option value="On-site" <?php echo $location_type === 'On-site' ? 'selected' : ''; ?>>On-site</option>
@@ -787,17 +867,17 @@ $user_initials = strtoupper(substr($full_name, 0, 2));
                             </select>
                         </div>
                         <div class="filter-group">
-                            <label><i class="fas fa-calendar-alt"></i> Duration</label>
+                            <label class="filter-label">Duration</label>
                             <select name="duration" class="filter-input">
                                 <option value="">All Durations</option>
-                                <option value="1" <?php echo $duration === '1' ? 'selected' : ''; ?>>1 month</option>
-                                <option value="2" <?php echo $duration === '2' ? 'selected' : ''; ?>>2 months</option>
-                                <option value="3" <?php echo $duration === '3' ? 'selected' : ''; ?>>3 months</option>
-                                <option value="6" <?php echo $duration === '6' ? 'selected' : ''; ?>>6 months</option>
+                                <option value="1 months" <?php echo $duration === '1 months' ? 'selected' : ''; ?>>1 month</option>
+                                <option value="2 months" <?php echo $duration === '2 months' ? 'selected' : ''; ?>>2 months</option>
+                                <option value="3 months" <?php echo $duration === '3 months' ? 'selected' : ''; ?>>3 months</option>
+                                <option value="6 months" <?php echo $duration === '6 months' ? 'selected' : ''; ?>>6 months</option>
                             </select>
                         </div>
                         <div class="filter-group">
-                            <label><i class="fas fa-building"></i> Company</label>
+                            <label class="filter-label">Company</label>
                             <input type="text" name="company" class="filter-input" placeholder="Company name..." value="<?php echo htmlspecialchars($company_filter); ?>">
                         </div>
                     </div>
@@ -805,19 +885,11 @@ $user_initials = strtoupper(substr($full_name, 0, 2));
                         <button type="submit" class="btn btn-primary">
                             <i class="fas fa-search"></i> Apply Filters
                         </button>
-                        <a href="browse.php" class="btn btn-secondary">
-                            <i class="fas fa-redo"></i> Clear All
+                        <a href="browse.php?tab=<?php echo $tab; ?>" class="btn btn-secondary">
+                            <i class="fas fa-times"></i> Clear Filters
                         </a>
                     </div>
                 </form>
-            </div>
-
-            <!-- Stats Bar -->
-            <div class="stats-bar">
-                <h3>
-                    <i class="fas fa-briefcase"></i>
-                    <?php echo $total_active; ?> Active Internship<?php echo $total_active !== 1 ? 's' : ''; ?> Found
-                </h3>
             </div>
 
             <!-- Internships Grid -->
@@ -826,25 +898,38 @@ $user_initials = strtoupper(substr($full_name, 0, 2));
                     <?php foreach ($internships as $internship): 
                         $positions_left = $internship['positions_available'] - $internship['application_count'];
                         $is_full = $positions_left <= 0;
+                        
+                        // Determine badge
+                        $badge_class = '';
+                        $badge_text = '';
+                        
+                        if ($tab === 'current') {
+                            if (strtotime($internship['start_date']) > strtotime('today')) {
+                                $badge_class = 'badge-upcoming';
+                                $badge_text = 'Upcoming';
+                            } else {
+                                $badge_class = 'badge-current';
+                                $badge_text = 'Current';
+                            }
+                        } elseif ($tab === 'active') {
+                            $badge_class = 'badge-active';
+                            $badge_text = 'In Progress';
+                        } else {
+                            $badge_class = 'badge-past';
+                            $badge_text = 'Completed';
+                        }
                     ?>
                         <div class="internship-card">
-                            <?php if ($internship['has_applied'] > 0): ?>
-                                <div class="applied-badge">
-                                    <i class="fas fa-check-circle"></i> Applied
-                                </div>
-                            <?php endif; ?>
+                            <span class="card-badge <?php echo $badge_class; ?>">
+                                <?php echo $badge_text; ?>
+                            </span>
 
                             <div class="card-header">
-                                <div style="flex: 1;">
-                                    <h3 class="internship-title"><?php echo htmlspecialchars($internship['title']); ?></h3>
-                                    <p class="company-name">
-                                        <i class="fas fa-building"></i>
-                                        <?php echo htmlspecialchars($internship['company_name']); ?>
-                                    </p>
+                                <h3 class="internship-title"><?php echo htmlspecialchars($internship['title']); ?></h3>
+                                <div class="company-info">
+                                    <i class="fas fa-building"></i>
+                                    <span class="company-name"><?php echo htmlspecialchars($internship['company_name']); ?></span>
                                 </div>
-                                <span class="trust-badge <?php echo $internship['trust_level']; ?>">
-                                    <?php echo ucfirst($internship['trust_level']); ?>
-                                </span>
                             </div>
 
                             <div class="card-meta">
@@ -866,10 +951,6 @@ $user_initials = strtoupper(substr($full_name, 0, 2));
                                 </span>
                             </div>
 
-                            <div class="card-description">
-                                <?php echo htmlspecialchars(substr($internship['description'], 0, 150)) . '...'; ?>
-                            </div>
-
                             <div class="card-skills">
                                 <div class="skills-tags">
                                     <?php 
@@ -884,40 +965,61 @@ $user_initials = strtoupper(substr($full_name, 0, 2));
                                 </div>
                             </div>
 
+                            <?php if ($tab === 'current'): ?>
+                                <div class="deadline-info">
+                                    <i class="fas fa-clock"></i>
+                                    Apply by: <?php echo date('M d, Y', strtotime($internship['application_deadline'])); ?>
+                                </div>
+                            <?php elseif ($tab === 'active'): ?>
+                                <div class="deadline-info deadline-passed">
+                                    <i class="fas fa-exclamation-circle"></i>
+                                    Deadline passed: <?php echo date('M d, Y', strtotime($internship['application_deadline'])); ?>
+                                </div>
+                            <?php else: ?>
+                                <div class="deadline-info">
+                                    <i class="fas fa-check-circle"></i>
+                                    Ended: <?php echo date('M d, Y', strtotime($internship['end_date'])); ?>
+                                </div>
+                            <?php endif; ?>
+
                             <div class="card-footer">
                                 <div class="positions-info">
-                                    <?php if ($is_full): ?>
-                                        <span class="positions-full">
-                                            <i class="fas fa-times-circle"></i> Positions Filled
-                                        </span>
+                                    <?php if ($tab === 'current'): ?>
+                                        <?php if ($is_full): ?>
+                                            <span class="positions-full">
+                                                <i class="fas fa-times-circle"></i> Positions Filled
+                                            </span>
+                                        <?php else: ?>
+                                            <strong><?php echo $positions_left; ?></strong> / <?php echo $internship['positions_available']; ?> left
+                                        <?php endif; ?>
                                     <?php else: ?>
-                                        <strong><?php echo $positions_left; ?></strong> / <?php echo $internship['positions_available']; ?> left
+                                        <?php echo $internship['positions_available']; ?> positions
                                     <?php endif; ?>
                                 </div>
                                 <div class="card-actions">
-                                    <button onclick="toggleSave(<?php echo $internship['id']; ?>, this)" 
-                                            class="btn btn-sm btn-save <?php echo $internship['is_saved'] > 0 ? 'saved' : ''; ?>"
-                                            title="<?php echo $internship['is_saved'] > 0 ? 'Saved' : 'Save'; ?>">
-                                        <i class="fas fa-bookmark"></i>
-                                    </button>
+                                    <?php if ($tab === 'current'): ?>
+                                        <button onclick="toggleSave(<?php echo $internship['id']; ?>, this)" 
+                                                class="btn btn-sm btn-save <?php echo $internship['is_saved'] > 0 ? 'saved' : ''; ?>"
+                                                title="<?php echo $internship['is_saved'] > 0 ? 'Saved' : 'Save'; ?>">
+                                            <i class="fas fa-bookmark"></i>
+                                        </button>
+                                    <?php endif; ?>
                                     <a href="view-details.php?id=<?php echo $internship['id']; ?>" class="btn btn-sm btn-view">
                                         <i class="fas fa-eye"></i> View
                                     </a>
-                                    <?php if (!$is_full && $internship['has_applied'] == 0): ?>
+                                    <?php if ($tab === 'current' && !$is_full && $internship['has_applied'] == 0): ?>
                                         <?php if ($can_apply): ?>
                                             <a href="../applications/apply.php?id=<?php echo $internship['id']; ?>" class="btn btn-sm btn-primary">
                                                 <i class="fas fa-paper-plane"></i> Apply
                                             </a>
                                         <?php else: ?>
-                                            <a href="../dashboard/profile.php" class="btn btn-sm" style="background: #fef3c7; color: #92400e;" title="Complete your profile to apply">
+                                            <a href="../dashboard/profile.php" class="btn btn-sm btn-warning" title="Complete your profile to apply">
                                                 <i class="fas fa-exclamation-triangle"></i> Complete Profile
                                             </a>
                                         <?php endif; ?>
                                     <?php endif; ?>
-
                                 </div>
                             </div>
-
                         </div>
                     <?php endforeach; ?>
                 </div>
@@ -925,10 +1027,7 @@ $user_initials = strtoupper(substr($full_name, 0, 2));
                 <div class="empty-state">
                     <i class="fas fa-search"></i>
                     <h3>No Internships Found</h3>
-                    <p>Try adjusting your search filters to see more results</p>
-                    <a href="browse.php" class="btn btn-primary">
-                        <i class="fas fa-redo"></i> Clear Filters
-                    </a>
+                    <p>No internships match your criteria in this category. Try adjusting your filters.</p>
                 </div>
             <?php endif; ?>
         </div>

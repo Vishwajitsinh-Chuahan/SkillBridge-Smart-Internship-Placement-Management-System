@@ -2,6 +2,7 @@
 session_start();
 require_once '../config/database.php';
 require_once '../includes/profile_functions.php';
+
 // Check if user is logged in and is a student
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'Student') {
     header('Location: ../auth/login.php');
@@ -10,6 +11,22 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'Student') {
 
 $user_id = $_SESSION['user_id'];
 $full_name = $_SESSION['full_name'] ?? 'Student';
+
+// Profile completion check
+$can_apply = canApplyForInternships($user_id, $conn);
+
+$stmt = $conn->prepare("SELECT * FROM users WHERE id = ?");
+$stmt->bind_param("i", $user_id);
+$stmt->execute();
+$user_data = $stmt->get_result()->fetch_assoc();
+
+$stmt = $conn->prepare("SELECT * FROM student_profiles WHERE user_id = ?");
+$stmt->bind_param("i", $user_id);
+$stmt->execute();
+$profile_result = $stmt->get_result();
+$profile_data = $profile_result->num_rows > 0 ? $profile_result->fetch_assoc() : null;
+
+$profile_completion = calculateProfileCompletion($user_data, $profile_data);
 
 // Handle unsave action
 if (isset($_GET['unsave'])) {
@@ -45,13 +62,13 @@ $stmt->bind_param("ii", $user_id, $user_id);
 $stmt->execute();
 $saved_internships = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
-// ✅ FIXED: Statistics calculation
+// Statistics - Fixed calculation
 $total_saved = count($saved_internships);
 $active_count = 0;
 $expired_count = 0;
 
 foreach ($saved_internships as $internship) {
-    // ✅ Active: status is approved/active AND deadline not passed
+    // Active: status is approved/active AND deadline not passed
     if (in_array($internship['status'], ['approved', 'active']) && 
         strtotime($internship['application_deadline']) >= strtotime('today')) {
         $active_count++;
@@ -60,20 +77,15 @@ foreach ($saved_internships as $internship) {
     }
 }
 
-$can_apply = canApplyForInternships($user_id, $conn);
-
-// Get profile completion
-$stmt = $conn->prepare("SELECT * FROM users WHERE id = ?");
-$stmt->bind_param("i", $user_id);
-$stmt->execute();
-$user_data = $stmt->get_result()->fetch_assoc();
-
-$stmt = $conn->prepare("SELECT * FROM student_profiles WHERE user_id = ?");
-$stmt->bind_param("i", $user_id);
-$stmt->execute();
-$profile_data = $stmt->get_result()->fetch_assoc();
-
-$profile_completion = calculateProfileCompletion($user_data, $profile_data);
+// Get trust level display
+function getTrustLevelDisplay($trust_level) {
+    $levels = [
+        'new' => ['text' => 'Recently Joined', 'icon' => 'fa-star', 'color' => '#3b82f6', 'bg' => '#dbeafe'],
+        'verified' => ['text' => 'Verified Company', 'icon' => 'fa-shield-check', 'color' => '#10b981', 'bg' => '#d1fae5'],
+        'trusted' => ['text' => 'Top Recruiter', 'icon' => 'fa-trophy', 'color' => '#f59e0b', 'bg' => '#fef3c7']
+    ];
+    return $levels[$trust_level] ?? $levels['new'];
+}
 
 // Get user initials
 $user_initials = strtoupper(substr($full_name, 0, 2));
@@ -293,6 +305,12 @@ $user_initials = strtoupper(substr($full_name, 0, 2));
             color: #065f46;
         }
 
+        .alert-warning {
+            background: #fef3c7;
+            border-left: 4px solid #f59e0b;
+            color: #92400e;
+        }
+
         /* Stats Grid */
         .stats-grid {
             display: grid;
@@ -337,7 +355,7 @@ $user_initials = strtoupper(substr($full_name, 0, 2));
             letter-spacing: 0.5px;
         }
 
-        /* Internships Grid */
+        /* Internships Grid - Updated Design */
         .internships-grid {
             display: grid;
             grid-template-columns: repeat(2, 1fr);
@@ -350,7 +368,7 @@ $user_initials = strtoupper(substr($full_name, 0, 2));
             padding: 1.5rem;
             box-shadow: 0 2px 8px rgba(0,0,0,0.05);
             transition: all 0.3s;
-            border: 2px solid transparent;
+            border: 2px solid #e2e8f0;
             position: relative;
         }
 
@@ -360,15 +378,34 @@ $user_initials = strtoupper(substr($full_name, 0, 2));
             border-color: #667eea;
         }
 
-        .internship-card.expired {
-            opacity: 0.7;
-            background: #f8fafc;
+        /* Status Badge - Top Right */
+        .status-badge-corner {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            padding: 0.4rem 0.85rem;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        .status-active {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .status-upcoming {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+
+        .status-expired {
+            background: #fee2e2;
+            color: #991b1b;
         }
 
         .card-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: start;
             margin-bottom: 1rem;
         }
 
@@ -377,6 +414,14 @@ $user_initials = strtoupper(substr($full_name, 0, 2));
             color: #1e293b;
             font-weight: 700;
             margin-bottom: 0.5rem;
+            padding-right: 6rem;
+        }
+
+        .company-info {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 0.75rem;
         }
 
         .company-name {
@@ -388,17 +433,14 @@ $user_initials = strtoupper(substr($full_name, 0, 2));
             gap: 0.5rem;
         }
 
-        .trust-badge {
-            padding: 0.25rem 0.75rem;
-            border-radius: 20px;
-            font-size: 0.7rem;
-            font-weight: 700;
-            text-transform: uppercase;
+        .saved-date {
+            font-size: 0.8rem;
+            color: #94a3b8;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
         }
-
-        .trust-badge.new { background: #dbeafe; color: #1e40af; }
-        .trust-badge.verified { background: #d1fae5; color: #065f46; }
-        .trust-badge.trusted { background: #fef3c7; color: #92400e; }
 
         .card-meta {
             display: flex;
@@ -412,20 +454,12 @@ $user_initials = strtoupper(substr($full_name, 0, 2));
         .meta-item {
             display: flex;
             align-items: center;
-            gap: 0.25rem;
+            gap: 0.35rem;
         }
 
         .meta-item i {
             color: #667eea;
-        }
-
-        .saved-date {
-            font-size: 0.8rem;
-            color: #94a3b8;
-            margin-bottom: 1rem;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
+            font-size: 0.9rem;
         }
 
         .card-skills {
@@ -447,39 +481,59 @@ $user_initials = strtoupper(substr($full_name, 0, 2));
             font-weight: 600;
         }
 
-        .card-footer {
+        /* Deadline Info */
+        .deadline-info {
             display: flex;
-            justify-content: space-between;
             align-items: center;
-            padding-top: 1rem;
-            border-top: 1px solid #e2e8f0;
+            gap: 0.5rem;
+            font-size: 0.85rem;
+            color: #64748b;
+            margin-bottom: 1rem;
+            padding: 0.5rem;
+            background: #f8fafc;
+            border-radius: 6px;
         }
 
-        .status-badge {
-            padding: 0.5rem 1rem;
-            border-radius: 20px;
-            font-size: 0.75rem;
+        .deadline-info i {
+            color: #667eea;
+        }
+
+        /* Positions Info */
+        .positions-section {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 1rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        .positions-info {
+            font-size: 0.95rem;
+            color: #475569;
+        }
+
+        .positions-info strong {
+            color: #1e293b;
+            font-size: 1.1rem;
             font-weight: 700;
-            text-transform: uppercase;
         }
 
-        .status-active {
-            background: #d1fae5;
-            color: #065f46;
+        .positions-full {
+            color: #ef4444;
+            font-weight: 700;
         }
 
-        .status-expired {
-            background: #fee2e2;
-            color: #991b1b;
-        }
-
+        /* Card Actions */
+        /* Card Actions - Fixed Button Width */
         .card-actions {
             display: flex;
             gap: 0.5rem;
+            align-items: stretch;
         }
 
         .btn {
-            padding: 0.75rem 1.5rem;
+            padding: 0.65rem 1.25rem;
             border-radius: 8px;
             font-weight: 600;
             border: none;
@@ -488,56 +542,61 @@ $user_initials = strtoupper(substr($full_name, 0, 2));
             font-size: 0.9rem;
             display: inline-flex;
             align-items: center;
+            justify-content: center;
             gap: 0.5rem;
             text-decoration: none;
+            white-space: nowrap;
+            min-width: fit-content;
         }
 
-        .btn-sm {
-            padding: 0.5rem 1rem;
-            font-size: 0.85rem;
-        }
-
-        .btn-primary {
+        .btn.btn-primary {
             background: linear-gradient(135deg, #667eea, #764ba2);
             color: white;
         }
 
-        .btn-primary:hover {
+        .btn.btn-primary:hover {
             transform: translateY(-2px);
             box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
         }
 
-        .btn-view {
+        .btn.btn-view {
             background: #667eea;
             color: white;
         }
 
-        .btn-view:hover {
+        .btn.btn-view:hover {
             background: #5568d3;
         }
 
-        .btn-remove {
+        .btn.btn-remove {
             background: #fee2e2;
             color: #991b1b;
+            padding: 0.65rem 1rem;
+            flex-shrink: 0;
         }
 
-        .btn-remove:hover {
+        .btn.btn-remove:hover {
             background: #fecaca;
         }
 
-        .applied-badge {
-            position: absolute;
-            top: 1rem;
-            right: 1rem;
-            background: #10b981;
-            color: white;
-            padding: 0.5rem 1rem;
-            border-radius: 20px;
-            font-size: 0.75rem;
-            font-weight: 700;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
+        .btn.btn-warning {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .btn.btn-warning:hover {
+            background: #fde68a;
+        }
+
+        .btn.btn-bookmark{
+            background: #f1f5f9;
+            color: #475569;
+            padding: 0.65rem 1rem;
+            flex-shrink: 0;
+        }
+
+        .btn.btn-bookmark:hover {
+            background: #e2e8f0;
         }
 
         .empty-state {
@@ -639,9 +698,6 @@ $user_initials = strtoupper(substr($full_name, 0, 2));
                     <a href="../settings/notifications.php" class="nav-link">
                         <i class="fas fa-bell"></i>
                         Notifications
-                         <?php if ($unread_count > 0): ?>
-                            <span class="notification-badge"><?php echo $unread_count; ?></span>
-                        <?php endif; ?>
                     </a>
                     <a href="../auth/logout.php" class="nav-link">
                         <i class="fas fa-sign-out-alt"></i>
@@ -674,6 +730,19 @@ $user_initials = strtoupper(substr($full_name, 0, 2));
         </div>
 
         <div class="content">
+            <?php if (!$can_apply): ?>
+                <div class="alert alert-warning">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <span>
+                        <strong>Profile Incomplete (<?php echo $profile_completion; ?>%):</strong> 
+                        Complete your profile to apply for internships. 
+                        <a href="../dashboard/profile.php" style="color: #92400e; text-decoration: underline; font-weight: 700;">
+                            Complete Now →
+                        </a>
+                    </span>
+                </div>
+            <?php endif; ?>
+
             <?php if (isset($_SESSION['success'])): ?>
                 <div class="alert alert-success">
                     <i class="fas fa-check-circle"></i>
@@ -703,28 +772,35 @@ $user_initials = strtoupper(substr($full_name, 0, 2));
                     <?php foreach ($saved_internships as $internship): 
                         $positions_left = $internship['positions_available'] - $internship['application_count'];
                         $is_full = $positions_left <= 0;
-                        // ✅ FIXED: Check deadline AND status (approved/active are valid)
                         $is_expired = strtotime($internship['application_deadline']) < strtotime('today') || 
                                       !in_array($internship['status'], ['approved', 'active']);
+                        
+                        // Determine status badge
+                        if ($is_expired) {
+                            $badge_class = 'status-expired';
+                            $badge_text = 'EXPIRED';
+                        } elseif (strtotime($internship['start_date']) > strtotime('today')) {
+                            $badge_class = 'status-upcoming';
+                            $badge_text = 'UPCOMING';
+                        } else {
+                            $badge_class = 'status-active';
+                            $badge_text = 'ACTIVE';
+                        }
+                        
+                        $trust_display = getTrustLevelDisplay($internship['trust_level']);
                     ?>
-                        <div class="internship-card <?php echo $is_expired ? 'expired' : ''; ?>">
-                            <?php if ($internship['has_applied'] > 0): ?>
-                                <div class="applied-badge">
-                                    <i class="fas fa-check-circle"></i> Applied
-                                </div>
-                            <?php endif; ?>
+                        <div class="internship-card">
+                            <!-- Status Badge -->
+                            <span class="status-badge-corner <?php echo $badge_class; ?>">
+                                <?php echo $badge_text; ?>
+                            </span>
 
                             <div class="card-header">
-                                <div style="flex: 1;">
-                                    <h3 class="internship-title"><?php echo htmlspecialchars($internship['title']); ?></h3>
-                                    <p class="company-name">
-                                        <i class="fas fa-building"></i>
-                                        <?php echo htmlspecialchars($internship['company_name']); ?>
-                                    </p>
+                                <h3 class="internship-title"><?php echo htmlspecialchars($internship['title']); ?></h3>
+                                <div class="company-info">
+                                    <i class="fas fa-building"></i>
+                                    <span class="company-name"><?php echo htmlspecialchars($internship['company_name']); ?></span>
                                 </div>
-                                <span class="trust-badge <?php echo $internship['trust_level']; ?>">
-                                    <?php echo ucfirst($internship['trust_level']); ?>
-                                </span>
                             </div>
 
                             <div class="saved-date">
@@ -765,40 +841,55 @@ $user_initials = strtoupper(substr($full_name, 0, 2));
                                 </div>
                             </div>
 
-                            <div class="card-footer">
+                            <!-- Deadline Info -->
+                            <div class="deadline-info">
+                                <i class="fas fa-clock"></i>
                                 <?php if ($is_expired): ?>
-                                    <span class="status-badge status-expired">
-                                        <i class="fas fa-times-circle"></i> Expired
-                                    </span>
-                                <?php elseif ($is_full): ?>
-                                    <span class="status-badge status-expired">
-                                        <i class="fas fa-times-circle"></i> Positions Filled
-                                    </span>
+                                    <span style="color: #ef4444;">Deadline passed: <?php echo date('M d, Y', strtotime($internship['application_deadline'])); ?></span>
                                 <?php else: ?>
-                                    <span class="status-badge status-active">
-                                        <i class="fas fa-check-circle"></i> Active
-                                    </span>
+                                    <span>Apply by: <?php echo date('M d, Y', strtotime($internship['application_deadline'])); ?></span>
                                 <?php endif; ?>
+                            </div>
 
-                                <div class="card-actions">
-                                    <a href="view-details.php?id=<?php echo $internship['id']; ?>" class="btn btn-sm btn-view">
-                                        <i class="fas fa-eye"></i> View
-                                    </a>
-                                    <?php if (!$is_full && $internship['has_applied'] == 0): ?>
-                                        <?php if ($can_apply): ?>
-                                            <a href="../applications/apply.php?id=<?php echo $internship['id']; ?>" class="btn btn-sm btn-primary">
-                                                <i class="fas fa-paper-plane"></i> Apply
-                                            </a>
-                                        <?php else: ?>
-                                            <a href="../dashboard/profile.php" class="btn btn-sm" style="background: #fef3c7; color: #92400e;" title="Complete your profile to apply">
-                                                <i class="fas fa-exclamation-triangle"></i> Complete Profile
-                                            </a>
-                                        <?php endif; ?>
+                            <!-- Positions Section -->
+                            <div class="positions-section">
+                                <div class="positions-info">
+                                    <?php if ($is_full): ?>
+                                        <span class="positions-full">
+                                            <i class="fas fa-times-circle"></i> Positions Filled
+                                        </span>
+                                    <?php else: ?>
+                                        <strong><?php echo $positions_left; ?></strong> / <?php echo $internship['positions_available']; ?> left
                                     <?php endif; ?>
-                                    <a href="?unsave=<?php echo $internship['id']; ?>" class="btn btn-sm btn-remove" onclick="return confirm('Remove this internship from saved list?');">
-                                        <i class="fas fa-trash-alt"></i>
-                                    </a>
                                 </div>
+                                <button onclick="window.location.href='?unsave=<?php echo $internship['id']; ?>'" 
+                                        class="btn btn-bookmark" 
+                                        title="Remove from saved">
+                                    <i class="fas fa-bookmark"></i>
+                                </button>
+                            </div>
+
+                            <!-- Action Buttons -->
+                            <div class="card-actions">
+                                <a href="view-details.php?id=<?php echo $internship['id']; ?>" class="btn btn-view">
+                                    <i class="fas fa-eye"></i> View
+                                </a>
+                                <?php if (!$is_full && !$is_expired && $internship['has_applied'] == 0): ?>
+                                    <?php if ($can_apply): ?>
+                                        <a href="../applications/apply.php?id=<?php echo $internship['id']; ?>" class="btn btn-primary">
+                                            <i class="fas fa-paper-plane"></i> Apply
+                                        </a>
+                                    <?php else: ?>
+                                        <a href="../dashboard/profile.php" class="btn btn-warning">
+                                            <i class="fas fa-exclamation-triangle"></i> Complete Profile
+                                        </a>
+                                    <?php endif; ?>
+                                <?php endif; ?>
+                                <a href="?unsave=<?php echo $internship['id']; ?>" 
+                                   class="btn btn-remove" 
+                                   onclick="return confirm('Remove this internship from saved list?');">
+                                    <i class="fas fa-trash-alt"></i>
+                                </a>
                             </div>
                         </div>
                     <?php endforeach; ?>

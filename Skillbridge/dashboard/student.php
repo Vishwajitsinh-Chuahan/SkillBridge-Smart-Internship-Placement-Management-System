@@ -820,7 +820,7 @@ function getStatusBadge($status) {
                                         <span><i class="fas fa-map-marker-alt"></i> <?php echo htmlspecialchars($internship['location']); ?></span>
                                         <span><i class="fas fa-briefcase"></i> <?php echo htmlspecialchars($internship['internship_type']); ?></span>
                                     </div>
-                                    <a href="../internships/view.php?id=<?php echo $internship['id']; ?>" class="btn btn-primary" style="width: 100%; justify-content: center;">
+                                    <a href="../internships/view-details.php?id=<?php echo $internship['id']; ?>" class="btn btn-primary" style="width: 100%; justify-content: center;">
                                         View Details
                                     </a>
                                 </div>
