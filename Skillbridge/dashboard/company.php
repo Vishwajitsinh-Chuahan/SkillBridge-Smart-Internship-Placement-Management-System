@@ -242,7 +242,7 @@ if (!empty($company_name) && strpos($company_name, ' ') !== false) {
                 <!-- Applications Section -->
                 <div class="nav-section">
                     <div class="nav-section-title">Applications</div>
-                    <a href="<?php echo BASE_URL; ?>/applications/received.php" class="nav-item">
+                    <a href="<?php echo BASE_URL; ?>/applications/view-applications.php" class="nav-item">
                         <i class="fas fa-inbox"></i>
                         Received Applications
                     </a>
@@ -431,7 +431,7 @@ if (!empty($company_name) && strpos($company_name, ' ') !== false) {
             <div class="activity-card">
                 <div class="activity-header">
                     <h3 class="activity-title">Recent Applications</h3>
-                    <a href="<?php echo BASE_URL; ?>/applications/received.php" class="view-all-link">View All</a>
+                    <a href="<?php echo BASE_URL; ?>/applications/view-application.php" class="view-all-link">View All</a>
                 </div>
                 <div class="activity-list">
                     <?php if (!empty($recent_applications)): ?>
@@ -483,7 +483,7 @@ if (!empty($company_name) && strpos($company_name, ' ') !== false) {
                     <h4>Post Internship</h4>
                     <p>Create new internship opportunities</p>
                 </a>
-                <a href="<?php echo BASE_URL; ?>/applications/received.php" class="action-card">
+                <a href="<?php echo BASE_URL; ?>/applications/view-applications.php" class="action-card">
                     <i class="fas fa-inbox"></i>
                     <h4>Review Applications</h4>
                     <p>View and manage student applications</p>
