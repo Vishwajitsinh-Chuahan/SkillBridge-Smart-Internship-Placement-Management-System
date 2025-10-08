@@ -77,7 +77,7 @@ $company_query = "
     SELECT 
         u.id, u.full_name, u.email, u.phone, u.created_at, u.status as user_status,
         c.name as company_name, c.industry, c.company_size, c.website, c.address, 
-        c.description, c.logo_path, c.status as company_status, c.updated_at,
+        c.description, c.founded_year,c.logo_path, c.status as company_status, c.updated_at,
         c.trust_level, c.approved_posts_count, c.flagged_posts_count, c.last_reviewed_at
     FROM users u
     JOIN roles r ON u.role_id = r.id
@@ -742,6 +742,13 @@ function sendCompanyApprovalEmail($company_id, $status, $reason = '') {
                         <div class="detail-label">Company Size</div>
                         <div class="detail-value <?php echo empty($company['company_size']) ? 'empty' : ''; ?>">
                             <?php echo htmlspecialchars($company['company_size'] ?: 'Not specified'); ?>
+                        </div>
+                    </div>
+
+                    <div class="detail-item">
+                        <div class="detail-label">Company Established Year</div>
+                        <div class="detail-value <?php echo empty($company['founded_year']) ? 'empty' : ''; ?>">
+                            <?php echo htmlspecialchars($company['founded_year'] ?: 'Not specified'); ?>
                         </div>
                     </div>
 
