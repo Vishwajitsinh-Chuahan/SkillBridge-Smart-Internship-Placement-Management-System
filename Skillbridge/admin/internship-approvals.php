@@ -43,7 +43,7 @@ if (isset($_POST['approve_internship'])) {
         if ($start_date <= $today) {
             // Start date already passed or is today → Make ACTIVE immediately
             $new_status = 'active';
-            $status_message = "The internship is now ACTIVE and visible to students";
+            $status_message = "The internship is now ACTIVE and visible to students!";
         } else {
             // Start date is future → Set as APPROVED, will auto-activate later
             $new_status = 'approved';
