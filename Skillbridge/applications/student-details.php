@@ -812,9 +812,23 @@ $student_initials = strtoupper(substr($student['full_name'], 0, 2));
                         <div class="info-item">
                             <div class="info-label">Resume</div>
                             <div class="info-value">
-                                <a href="../uploads/resumes/<?php echo htmlspecialchars($student['resume_path']); ?>" target="_blank">
-                                    <i class="fas fa-file-pdf"></i> Download Resume
-                                </a>
+                                <?php if (!empty($student['resume_path'])): ?>
+                                    <?php
+                                        // Clean the resume path
+                                        $resume_file = str_replace('uploads/resumes/', '', $student['resume_path']);
+                                        $resume_file = basename($resume_file);
+                                        $resume_url = '/Skillbridge/uploads/resumes/' . rawurlencode($resume_file);
+                                    ?>
+                                    <a href="<?php echo $resume_url; ?>" 
+                                    target="_blank" 
+                                    class="btn btn-primary"
+                                    style="display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1.5rem;">
+                                        <i class="fas fa-download"></i> Download Resume
+                                    </a>
+                                    <?php else: ?>
+                                        <p style="color: #6b7280;">No resume uploaded by this student</p>
+                                    <?php endif; ?>
+
                             </div>
                         </div>
                         <?php endif; ?> -->
