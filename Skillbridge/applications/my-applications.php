@@ -11,35 +11,47 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'Student') {
 $user_id = $_SESSION['user_id'];
 $full_name = $_SESSION['full_name'] ?? 'Student';
 
-// Get filter parameter
-$status_filter = $_GET['status'] ?? '';
+// Get filter parameters
+$tab = $_GET['tab'] ?? 'all';
+$search = trim($_GET['search'] ?? '');
 
-// Fetch all applications
+// Build applications query with interview details
 $query = "
     SELECT 
         a.*,
         i.title as internship_title,
         i.location,
-        i.location_type,
         i.duration,
         i.stipend,
-        i.status as internship_status,
+        i.internship_type,
         c.name as company_name,
-        c.trust_level
+        c.logo_path,
+        int_schedule.interview_datetime,
+        int_schedule.interview_mode,
+        int_schedule.interview_location
     FROM applications a
     JOIN internships i ON a.internship_id = i.id
     JOIN companies c ON i.company_id = c.user_id
+    LEFT JOIN interviews int_schedule ON a.id = int_schedule.application_id AND int_schedule.status = 'scheduled'
     WHERE a.student_id = ?
 ";
 
 $params = [$user_id];
 $types = 'i';
 
-// Apply status filter
-if (!empty($status_filter)) {
+// Apply tab filter
+if ($tab !== 'all') {
     $query .= " AND a.status = ?";
-    $params[] = $status_filter;
+    $params[] = $tab;
     $types .= 's';
+}
+
+// Apply search filter
+if (!empty($search)) {
+    $search_term = "%$search%";
+    $query .= " AND (i.title LIKE ? OR c.name LIKE ? OR i.location LIKE ?)";
+    $params = array_merge($params, [$search_term, $search_term, $search_term]);
+    $types .= 'sss';
 }
 
 $query .= " ORDER BY a.applied_at DESC";
@@ -49,12 +61,13 @@ $stmt->bind_param($types, ...$params);
 $stmt->execute();
 $applications = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
-// Get statistics
+// Get statistics - UPDATED WITH INTERVIEW STATUS
 $stats = [
     'total' => 0,
     'pending' => 0,
     'reviewed' => 0,
     'shortlisted' => 0,
+    'interview' => 0,
     'selected' => 0,
     'rejected' => 0
 ];
@@ -71,12 +84,13 @@ while ($row = $stmt->fetch_assoc()) {
     $stats['total'] += $row['count'];
 }
 
-// Status badge helper function
+// Status badge helper function - UPDATED WITH INTERVIEW
 function getStatusBadge($status) {
     $badges = [
         'pending' => ['color' => '#3b82f6', 'bg' => '#dbeafe', 'text' => 'Pending', 'icon' => 'clock'],
         'reviewed' => ['color' => '#8b5cf6', 'bg' => '#ede9fe', 'text' => 'Reviewed', 'icon' => 'eye'],
         'shortlisted' => ['color' => '#f59e0b', 'bg' => '#fef3c7', 'text' => 'Shortlisted', 'icon' => 'star'],
+        'interview' => ['color' => '#06b6d4', 'bg' => '#cffafe', 'text' => 'Interview Scheduled', 'icon' => 'calendar-check'],
         'selected' => ['color' => '#059669', 'bg' => '#d1fae5', 'text' => 'Selected', 'icon' => 'check-circle'],
         'rejected' => ['color' => '#ef4444', 'bg' => '#fee2e2', 'text' => 'Rejected', 'icon' => 'times-circle']
     ];
@@ -103,7 +117,7 @@ $user_initials = strtoupper(substr($full_name, 0, 2));
 
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: #f8fafc;
             min-height: 100vh;
         }
 
@@ -240,15 +254,11 @@ $user_initials = strtoupper(substr($full_name, 0, 2));
             font-size: 0.95rem;
             font-weight: 600;
             margin-bottom: 0.25rem;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
         }
 
         .user-details p {
             color: #94a3b8;
             font-size: 0.8rem;
-            margin: 0;
         }
 
         /* Main Content */
@@ -258,22 +268,19 @@ $user_initials = strtoupper(substr($full_name, 0, 2));
             background: #f8fafc;
         }
 
+        /* Header */
         .header {
             background: white;
-            padding: 2rem;
+            padding: 2rem 2.5rem;
             box-shadow: 0 2px 10px rgba(0,0,0,0.05);
-        }
-
-        .header-content {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
+            border-bottom: 1px solid #e5e7eb;
         }
 
         .header h1 {
             font-size: 2rem;
             color: #1e293b;
             margin-bottom: 0.5rem;
+            font-weight: 700;
         }
 
         .header p {
@@ -281,150 +288,152 @@ $user_initials = strtoupper(substr($full_name, 0, 2));
             font-size: 1rem;
         }
 
-        .content {
-            padding: 2rem;
+        /* Stats Bar */
+        .stats-bar {
+            background: white;
+            padding: 2rem 2.5rem;
+            border-bottom: 1px solid #e5e7eb;
+            display: flex;
+            gap: 2rem;
+            overflow-x: auto;
         }
 
-        /* Alert */
-        .alert {
+        .stat-item {
+            text-align: center;
+            min-width: 120px;
+        }
+
+        .stat-value {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 0.25rem;
+        }
+
+        .stat-item.total .stat-value { color: #667eea; }
+        .stat-item.pending .stat-value { color: #3b82f6; }
+        .stat-item.reviewed .stat-value { color: #8b5cf6; }
+        .stat-item.shortlisted .stat-value { color: #f59e0b; }
+        .stat-item.interview .stat-value { color: #06b6d4; }
+        .stat-item.selected .stat-value { color: #10b981; }
+        .stat-item.rejected .stat-value { color: #e91515ff; }
+
+        .stat-label {
+            font-size: 0.8rem;
+            color: #6b7280;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            font-weight: 600;
+        }
+
+        /* Tabs */
+        .tabs-container {
+            background: white;
+            padding: 0 2.5rem;
+            border-bottom: 2px solid #e5e7eb;
+            display: flex;
+            gap: 0.5rem;
+            overflow-x: auto;
+        }
+
+        .tab-button {
             padding: 1rem 1.5rem;
-            border-radius: 10px;
-            margin-bottom: 1.5rem;
+            background: none;
+            border: none;
+            border-bottom: 3px solid transparent;
+            color: #6b7280;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            white-space: nowrap;
+            font-size: 0.95rem;
             display: flex;
             align-items: center;
-            gap: 0.75rem;
+            gap: 0.5rem;
+            text-decoration: none;
         }
 
-        .alert-success {
-            background: #d1fae5;
-            border-left: 4px solid #10b981;
-            color: #065f46;
+        .tab-button:hover {
+            color: #667eea;
+            background: rgba(102, 126, 234, 0.05);
         }
 
-        /* Stats Grid */
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 1.5rem;
-            margin-bottom: 2rem;
+        .tab-button.active {
+            color: #667eea;
+            border-bottom-color: #667eea;
         }
 
-        .stat-card {
-            background: white;
-            padding: 1.5rem;
+        .tab-badge {
+            background: #e5e7eb;
+            color: #4b5563;
+            padding: 0.25rem 0.6rem;
             border-radius: 12px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-            border-left: 4px solid;
-            transition: all 0.3s;
-        }
-
-        .stat-card:hover {
-            transform: translateY(-4px);
-            box-shadow: 0 8px 20px rgba(0,0,0,0.1);
-        }
-
-        .stat-card.total { border-color: #8b5cf6; }
-        .stat-card.pending { border-color: #3b82f6; }
-        .stat-card.shortlisted { border-color: #f59e0b; }
-        .stat-card.selected { border-color: #10b981; }
-
-        .stat-card h3 {
-            font-size: 2.5rem;
-            margin-bottom: 0.5rem;
+            font-size: 0.8rem;
             font-weight: 700;
         }
 
-        .stat-card.total h3 { color: #8b5cf6; }
-        .stat-card.pending h3 { color: #3b82f6; }
-        .stat-card.shortlisted h3 { color: #f59e0b; }
-        .stat-card.selected h3 { color: #10b981; }
-
-        .stat-card p {
-            color: #64748b;
-            font-size: 0.85rem;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-
-        /* Filter Tabs */
-        .filter-tabs {
-            background: white;
-            border-radius: 12px;
-            padding: 1rem;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-            margin-bottom: 2rem;
-            display: flex;
-            gap: 0.5rem;
-            flex-wrap: wrap;
-        }
-
-        .filter-tab {
-            padding: 0.75rem 1.5rem;
-            border-radius: 8px;
-            border: 2px solid #e2e8f0;
-            background: white;
-            color: #475569;
-            font-weight: 600;
-            font-size: 0.9rem;
-            cursor: pointer;
-            transition: all 0.3s;
-            text-decoration: none;
-            display: inline-flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-
-        .filter-tab:hover {
-            border-color: #667eea;
-            background: #f1f5f9;
-        }
-
-        .filter-tab.active {
-            background: linear-gradient(135deg, #667eea, #764ba2);
+        .tab-button.active .tab-badge {
+            background: #667eea;
             color: white;
-            border-color: #667eea;
         }
 
-        /* Applications List */
-        .applications-list {
-            display: flex;
-            flex-direction: column;
+        /* Content */
+        .content {
+            padding: 2.5rem;
+        }
+
+        .applications-grid {
+            display: grid;
             gap: 1.5rem;
         }
 
         .application-card {
             background: white;
-            border-radius: 12px;
-            padding: 1.5rem;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            border: 1px solid #e5e7eb;
+            border-radius: 16px;
+            padding: 2rem;
             transition: all 0.3s;
-            border: 2px solid transparent;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .application-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            opacity: 0;
+            transition: opacity 0.3s;
         }
 
         .application-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 20px rgba(0,0,0,0.1);
-            border-color: #667eea;
+            box-shadow: 0 12px 40px rgba(0,0,0,0.1);
+            transform: translateY(-4px);
         }
 
-        .app-header {
+        .application-card:hover::before {
+            opacity: 1;
+        }
+
+        .card-header {
             display: flex;
             justify-content: space-between;
             align-items: start;
-            margin-bottom: 1rem;
+            margin-bottom: 1.5rem;
         }
 
-        .app-title {
-            font-size: 1.25rem;
-            color: #1e293b;
-            font-weight: 700;
+        .card-title h3 {
+            font-size: 1.5rem;
+            color: #1f2937;
             margin-bottom: 0.5rem;
+            font-weight: 700;
         }
 
-        .app-company {
+        .card-title .company {
             color: #667eea;
-            font-size: 0.9rem;
+            font-size: 1rem;
             font-weight: 600;
             display: flex;
             align-items: center;
@@ -432,120 +441,161 @@ $user_initials = strtoupper(substr($full_name, 0, 2));
         }
 
         .status-badge {
-            padding: 0.5rem 1rem;
+            padding: 0.6rem 1.2rem;
             border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            white-space: nowrap;
+        }
+
+        .card-meta {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 1.5rem;
+            padding: 1.5rem;
+            background: #f8fafc;
+            border-radius: 12px;
+        }
+
+        .meta-item {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .meta-item i {
+            color: #667eea;
+            font-size: 1.1rem;
+            width: 24px;
+        }
+
+        .meta-item .label {
             font-size: 0.8rem;
+            color: #6b7280;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .meta-item .value {
+            font-size: 0.95rem;
+            color: #1f2937;
+            font-weight: 600;
+        }
+
+        /* Interview Info Box */
+        .interview-info {
+            background: linear-gradient(135deg, #cffafe, #e0f2fe);
+            border: 2px solid #06b6d4;
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-top: 1.5rem;
+        }
+
+        .interview-info h4 {
+            color: #0e7490;
+            font-size: 1.1rem;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .interview-details {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+        }
+
+        .interview-detail {
+            background: white;
+            padding: 0.75rem 1rem;
+            border-radius: 8px;
+        }
+
+        .interview-detail .label {
+            font-size: 0.75rem;
+            color: #0e7490;
             font-weight: 700;
             text-transform: uppercase;
-            display: inline-flex;
-            align-items: center;
-            gap: 0.5rem;
+            margin-bottom: 0.25rem;
         }
 
-        .app-meta {
+        .interview-detail .value {
+            font-size: 0.95rem;
+            color: #1f2937;
+            font-weight: 600;
+        }
+
+        .card-footer {
             display: flex;
-            flex-wrap: wrap;
-            gap: 1.5rem;
-            margin-bottom: 1rem;
-            font-size: 0.85rem;
-            color: #64748b;
-        }
-
-        .app-meta span {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-
-        .app-meta i {
-            color: #667eea;
-        }
-
-        .app-footer {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding-top: 1rem;
-            border-top: 1px solid #e2e8f0;
-            font-size: 0.85rem;
-            color: #64748b;
-        }
-
-        .app-date {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
+            gap: 1rem;
+            padding-top: 1.5rem;
+            border-top: 2px solid #f3f4f6;
         }
 
         .btn {
-            padding: 0.5rem 1rem;
-            border-radius: 8px;
+            padding: 0.75rem 1.5rem;
+            border-radius: 10px;
             font-weight: 600;
             border: none;
             cursor: pointer;
             transition: all 0.3s;
-            font-size: 0.85rem;
+            font-size: 0.95rem;
             display: inline-flex;
             align-items: center;
             gap: 0.5rem;
             text-decoration: none;
         }
 
-        .btn-view {
-            background: #667eea;
-            color: white;
-        }
-
-        .btn-view:hover {
-            background: #5568d3;
-        }
-
-        .empty-state {
-            text-align: center;
-            padding: 4rem 2rem;
-            color: #94a3b8;
-            background: white;
-            border-radius: 12px;
-        }
-
-        .empty-state i {
-            font-size: 4rem;
-            margin-bottom: 1rem;
-            opacity: 0.5;
-        }
-
-        .empty-state h3 {
-            font-size: 1.5rem;
-            color: #475569;
-            margin-bottom: 0.5rem;
-        }
-
-        .empty-state p {
-            color: #94a3b8;
-            margin-bottom: 1.5rem;
-        }
-
         .btn-primary {
             background: linear-gradient(135deg, #667eea, #764ba2);
             color: white;
-            padding: 0.75rem 1.5rem;
-            font-size: 0.9rem;
+            flex: 1;
+            justify-content: center;
         }
 
         .btn-primary:hover {
             transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+            box-shadow: 0 8px 20px rgba(102, 126, 234, 0.3);
         }
 
-        @media (max-width: 1024px) {
-            .stats-grid {
-                grid-template-columns: repeat(2, 1fr);
-            }
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 5rem 2rem;
+            background: white;
+            border-radius: 16px;
+            border: 2px dashed #e5e7eb;
+        }
+
+        .empty-state i {
+            font-size: 5rem;
+            color: #cbd5e1;
+            margin-bottom: 1.5rem;
+        }
+
+        .empty-state h3 {
+            font-size: 1.5rem;
+            color: #4b5563;
+            margin-bottom: 0.75rem;
+        }
+
+        .empty-state p {
+            color: #9ca3af;
+            margin-bottom: 2rem;
         }
 
         @media (max-width: 768px) {
-            .stats-grid {
-                grid-template-columns: 1fr;
+            .main-content {
+                margin-left: 0;
+            }
+            .sidebar {
+                display: none;
             }
         }
     </style>
@@ -591,30 +641,7 @@ $user_initials = strtoupper(substr($full_name, 0, 2));
                 </div>
 
                 <div class="nav-section">
-                    <div class="nav-section-title">Resources</div>
-                    <a href="../resources/resume-builder.php" class="nav-link">
-                        <i class="fas fa-file-alt"></i>
-                        Resume Builder
-                    </a>
-                    <a href="../resources/interview-prep.php" class="nav-link">
-                        <i class="fas fa-user-tie"></i>
-                        Interview Prep
-                    </a>
-                    <a href="../resources/career-tips.php" class="nav-link">
-                        <i class="fas fa-lightbulb"></i>
-                        Career Tips
-                    </a>
-                </div>
-
-                <div class="nav-section">
                     <div class="nav-section-title">Settings</div>
-                    <a href="../settings/notifications.php" class="nav-link">
-                        <i class="fas fa-bell"></i>
-                        Notifications
-                         <?php if ($unread_count > 0): ?>
-                            <span class="notification-badge"><?php echo $unread_count; ?></span>
-                        <?php endif; ?>
-                    </a>
                     <a href="../auth/logout.php" class="nav-link">
                         <i class="fas fa-sign-out-alt"></i>
                         Logout
@@ -637,111 +664,150 @@ $user_initials = strtoupper(substr($full_name, 0, 2));
     <!-- Main Content -->
     <div class="main-content">
         <div class="header">
-            <div class="header-content">
-                <div>
-                    <h1><i class="fas fa-file-alt"></i> My Applications</h1>
-                    <p>Track the status of all your internship applications</p>
-                </div>
+            <h1><i class="fas fa-file-alt"></i> My Applications</h1>
+            <p>Track the status of all your internship applications</p>
+        </div>
+
+        <!-- Stats Bar -->
+        <div class="stats-bar">
+            <div class="stat-item total">
+                <div class="stat-value"><?php echo $stats['total']; ?></div>
+                <div class="stat-label">Total Applications</div>
+            </div>
+            <div class="stat-item pending">
+                <div class="stat-value"><?php echo $stats['pending']; ?></div>
+                <div class="stat-label">Pending</div>
+            </div>
+            <div class="stat-item reviewed">
+                <div class="stat-value"><?php echo $stats['reviewed']; ?></div>
+                <div class="stat-label">Under Review</div>
+            </div>
+            <div class="stat-item shortlisted">
+                <div class="stat-value"><?php echo $stats['shortlisted']; ?></div>
+                <div class="stat-label">Shortlisted</div>
+            </div>
+            <div class="stat-item interview">
+                <div class="stat-value"><?php echo $stats['interview']; ?></div>
+                <div class="stat-label">Interview</div>
+            </div>
+            <div class="stat-item selected">
+                <div class="stat-value"><?php echo $stats['selected']; ?></div>
+                <div class="stat-label">Selected</div>
+            </div>
+             <div class="stat-item rejected">
+                <div class="stat-value"><?php echo $stats['rejected']; ?></div>
+                <div class="stat-label">Rejected</div>
             </div>
         </div>
 
+        <!-- Tabs -->
+        <div class="tabs-container">
+            <a href="?tab=all" class="tab-button <?php echo $tab === 'all' ? 'active' : ''; ?>">
+                <i class="fas fa-list"></i> All Applications
+                <span class="tab-badge"><?php echo $stats['total']; ?></span>
+            </a>
+            <a href="?tab=pending" class="tab-button <?php echo $tab === 'pending' ? 'active' : ''; ?>">
+                <i class="fas fa-clock"></i> Pending
+                <span class="tab-badge"><?php echo $stats['pending']; ?></span>
+            </a>
+            <a href="?tab=reviewed" class="tab-button <?php echo $tab === 'reviewed' ? 'active' : ''; ?>">
+                <i class="fas fa-eye"></i> Reviewed
+                <span class="tab-badge"><?php echo $stats['reviewed']; ?></span>
+            </a>
+            <a href="?tab=shortlisted" class="tab-button <?php echo $tab === 'shortlisted' ? 'active' : ''; ?>">
+                <i class="fas fa-star"></i> Shortlisted
+                <span class="tab-badge"><?php echo $stats['shortlisted']; ?></span>
+            </a>
+            <a href="?tab=interview" class="tab-button <?php echo $tab === 'interview' ? 'active' : ''; ?>">
+                <i class="fas fa-calendar-check"></i> Interview
+                <span class="tab-badge"><?php echo $stats['interview']; ?></span>
+            </a>
+            <a href="?tab=selected" class="tab-button <?php echo $tab === 'selected' ? 'active' : ''; ?>">
+                <i class="fas fa-check-circle"></i> Selected
+                <span class="tab-badge"><?php echo $stats['selected']; ?></span>
+            </a>
+            <a href="?tab=rejected" class="tab-button <?php echo $tab === 'rejected' ? 'active' : ''; ?>">
+                <i class="fas fa-times-circle"></i> Rejected
+                <span class="tab-badge"><?php echo $stats['rejected']; ?></span>
+            </a>
+        </div>
+
+        <!-- Applications Content -->
         <div class="content">
-            <?php if (isset($_SESSION['success'])): ?>
-                <div class="alert alert-success">
-                    <i class="fas fa-check-circle"></i>
-                    <?php echo $_SESSION['success']; unset($_SESSION['success']); ?>
-                </div>
-            <?php endif; ?>
-
-            <!-- Statistics -->
-            <div class="stats-grid">
-                <div class="stat-card total">
-                    <h3><?php echo $stats['total']; ?></h3>
-                    <p>Total Applications</p>
-                </div>
-                <div class="stat-card pending">
-                    <h3><?php echo $stats['pending'] + $stats['reviewed']; ?></h3>
-                    <p>Under Review</p>
-                </div>
-                <div class="stat-card shortlisted">
-                    <h3><?php echo $stats['shortlisted']; ?></h3>
-                    <p>Shortlisted</p>
-                </div>
-                <div class="stat-card selected">
-                    <h3><?php echo $stats['selected']; ?></h3>
-                    <p>Selected</p>
-                </div>
-            </div>
-
-            <!-- Filter Tabs -->
-            <div class="filter-tabs">
-                <a href="my-applications.php" class="filter-tab <?php echo empty($status_filter) ? 'active' : ''; ?>">
-                    <i class="fas fa-list"></i> All Applications
-                </a>
-                <a href="?status=pending" class="filter-tab <?php echo $status_filter === 'pending' ? 'active' : ''; ?>">
-                    <i class="fas fa-clock"></i> Pending
-                </a>
-                <a href="?status=reviewed" class="filter-tab <?php echo $status_filter === 'reviewed' ? 'active' : ''; ?>">
-                    <i class="fas fa-eye"></i> Reviewed
-                </a>
-                <a href="?status=shortlisted" class="filter-tab <?php echo $status_filter === 'shortlisted' ? 'active' : ''; ?>">
-                    <i class="fas fa-star"></i> Shortlisted
-                </a>
-                <a href="?status=selected" class="filter-tab <?php echo $status_filter === 'selected' ? 'active' : ''; ?>">
-                    <i class="fas fa-check-circle"></i> Selected
-                </a>
-                <a href="?status=rejected" class="filter-tab <?php echo $status_filter === 'rejected' ? 'active' : ''; ?>">
-                    <i class="fas fa-times-circle"></i> Rejected
-                </a>
-            </div>
-
-            <!-- Applications List -->
             <?php if (count($applications) > 0): ?>
-                <div class="applications-list">
+                <div class="applications-grid">
                     <?php foreach ($applications as $app): 
                         $badge = getStatusBadge($app['status']);
                     ?>
                         <div class="application-card">
-                            <div class="app-header">
-                                <div>
-                                    <h3 class="app-title"><?php echo htmlspecialchars($app['internship_title']); ?></h3>
-                                    <p class="app-company">
+                            <div class="card-header">
+                                <div class="card-title">
+                                    <h3><?php echo htmlspecialchars($app['internship_title']); ?></h3>
+                                    <div class="company">
                                         <i class="fas fa-building"></i>
                                         <?php echo htmlspecialchars($app['company_name']); ?>
-                                    </p>
+                                    </div>
                                 </div>
-                                <span class="status-badge" style="background: <?php echo $badge['bg']; ?>; color: <?php echo $badge['color']; ?>;">
+                                <div class="status-badge" style="background: <?php echo $badge['bg']; ?>; color: <?php echo $badge['color']; ?>;">
                                     <i class="fas fa-<?php echo $badge['icon']; ?>"></i>
                                     <?php echo $badge['text']; ?>
-                                </span>
-                            </div>
-
-                            <div class="app-meta">
-                                <span>
-                                    <i class="fas fa-map-marker-alt"></i>
-                                    <?php echo htmlspecialchars($app['location']); ?>
-                                </span>
-                                <span>
-                                    <i class="fas fa-laptop-house"></i>
-                                    <?php echo $app['location_type']; ?>
-                                </span>
-                                <span>
-                                    <i class="fas fa-calendar-alt"></i>
-                                    <?php echo $app['duration']; ?>
-                                </span>
-                                <span>
-                                    <i class="fas fa-money-bill-wave"></i>
-                                    <?php echo htmlspecialchars($app['stipend']); ?>
-                                </span>
-                            </div>
-
-                            <div class="app-footer">
-                                <div class="app-date">
-                                    <i class="fas fa-clock"></i>
-                                    Applied on <?php echo date('M d, Y', strtotime($app['applied_at'])); ?>
                                 </div>
-                                <a href="../internships/view-details.php?id=<?php echo $app['internship_id']; ?>" class="btn btn-view">
-                                    <i class="fas fa-eye"></i> View Details
+                            </div>
+
+                            <div class="card-meta">
+                                <div class="meta-item">
+                                    <i class="fas fa-map-marker-alt"></i>
+                                    <div>
+                                        <div class="label">Location</div>
+                                        <div class="value"><?php echo htmlspecialchars($app['location']); ?></div>
+                                    </div>
+                                </div>
+                                <div class="meta-item">
+                                    <i class="fas fa-clock"></i>
+                                    <div>
+                                        <div class="label">Duration</div>
+                                        <div class="value"><?php echo htmlspecialchars($app['duration']); ?></div>
+                                    </div>
+                                </div>
+                                <div class="meta-item">
+                                    <i class="fas fa-money-bill-wave"></i>
+                                    <div>
+                                        <div class="label">Stipend</div>
+                                        <div class="value"><?php echo htmlspecialchars($app['stipend']); ?></div>
+                                    </div>
+                                </div>
+                                <div class="meta-item">
+                                    <i class="fas fa-calendar"></i>
+                                    <div>
+                                        <div class="label">Applied On</div>
+                                        <div class="value"><?php echo date('M d, Y', strtotime($app['applied_at'])); ?></div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <?php if ($app['status'] === 'interview' && !empty($app['interview_datetime'])): ?>
+                                <div class="interview-info">
+                                    <h4><i class="fas fa-calendar-check"></i> Interview Scheduled</h4>
+                                    <div class="interview-details">
+                                        <div class="interview-detail">
+                                            <div class="label">Date & Time</div>
+                                            <div class="value"><?php echo date('M d, Y - g:i A', strtotime($app['interview_datetime'])); ?></div>
+                                        </div>
+                                        <div class="interview-detail">
+                                            <div class="label">Mode</div>
+                                            <div class="value"><?php echo ucfirst($app['interview_mode']); ?></div>
+                                        </div>
+                                        <div class="interview-detail">
+                                            <div class="label"><?php echo $app['interview_mode'] === 'online' ? 'Meeting Link' : 'Location'; ?></div>
+                                            <div class="value"><?php echo htmlspecialchars($app['interview_location']); ?></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            <?php endif; ?>
+
+                            <div class="card-footer">
+                                <a href="../internships/view-details.php?id=<?php echo $app['internship_id']; ?>" class="btn btn-primary">
+                                    <i class="fas fa-eye"></i> View Internship Details
                                 </a>
                             </div>
                         </div>
@@ -751,7 +817,7 @@ $user_initials = strtoupper(substr($full_name, 0, 2));
                 <div class="empty-state">
                     <i class="fas fa-inbox"></i>
                     <h3>No Applications Found</h3>
-                    <p>You haven't applied to any internships yet<?php echo !empty($status_filter) ? ' with this status' : ''; ?>.</p>
+                    <p>You haven't applied to any internships yet.</p>
                     <a href="../internships/browse.php" class="btn btn-primary">
                         <i class="fas fa-search"></i> Browse Internships
                     </a>

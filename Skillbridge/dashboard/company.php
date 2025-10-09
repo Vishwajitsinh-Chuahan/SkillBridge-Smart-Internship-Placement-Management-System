@@ -254,6 +254,10 @@ if (!empty($company_name) && strpos($company_name, ' ') !== false) {
                         <i class="fas fa-users"></i>
                         Interview Schedule
                     </a>
+                    <a href="<?php echo BASE_URL; ?>/applications/manage-interviews.php" class="nav-item">
+                        <i class="fas fa-list"></i>
+                        Manage Interviews
+                    </a>
                 </div>
 
                 <!-- Talent Section -->

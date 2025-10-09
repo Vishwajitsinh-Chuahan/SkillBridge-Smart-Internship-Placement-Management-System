@@ -72,7 +72,8 @@ $stmt = $conn->query("SELECT COUNT(*) as count FROM applications WHERE student_i
 $stats['interviews'] = $stmt->fetch_assoc()['count'];
 
 // Saved internships (if you have a saved_internships table)
-$stats['saved'] = 0;
+$stmt = $conn->query("SELECT COUNT(*) as count FROM saved_internships WHERE student_id = $user_id");
+$stats['saved'] = $stmt->fetch_assoc()['count'];
 
 // Recent applications
 $recent_applications = $conn->query("
@@ -112,7 +113,7 @@ function getStatusBadge($status) {
         'reviewed' => ['color' => '#8b5cf6', 'bg' => '#ede9fe', 'text' => 'Reviewed'],
         'shortlisted' => ['color' => '#10b981', 'bg' => '#d1fae5', 'text' => 'Shortlisted'],
         'interview' => ['color' => '#f59e0b', 'bg' => '#fef3c7', 'text' => 'Interview'],
-        'hired' => ['color' => '#059669', 'bg' => '#d1fae5', 'text' => 'Hired'],
+        'selected' => ['color' => '#059669', 'bg' => '#d1fae5', 'text' => 'Selected'],
         'rejected' => ['color' => '#ef4444', 'bg' => '#fee2e2', 'text' => 'Rejected']
     ];
     return $badges[$status] ?? $badges['applied'];
@@ -828,7 +829,7 @@ function getStatusBadge($status) {
                         <i class="fas fa-star"></i>
                         Recommended for You
                     </h3>
-                    <a href="../internships/browse.php">
+                    <a href="../internships/recommended.php">
                         View All →
                     </a>
                 </div>

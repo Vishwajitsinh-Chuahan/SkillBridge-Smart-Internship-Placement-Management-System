@@ -52,11 +52,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_status'])) {
         if ($update_stmt->execute()) {
             // Create notification for student with COMPANY NAME
             $status_messages = [
-                'pending' => "Your application status has been updated to Pending by {$company_display_name}.",
-                'reviewed' => "Your application for {$app_data['title']} has been reviewed by {$company_display_name}.",
-                'shortlisted' => "Congratulations! You have been shortlisted for {$app_data['title']} at {$company_display_name}.",
-                'selected' => "🎉 Congratulations! You have been selected for {$app_data['title']} at {$company_display_name}!",
-                'rejected' => "Unfortunately, your application for {$app_data['title']} at {$company_display_name} was not successful this time and the companay has decided to move with other candidates."
+            'pending' => "Your application status has been updated to Pending by {$company_display_name}.",
+            'reviewed' => "Your application for {$app_data['title']} has been reviewed by {$company_display_name}.",
+            'shortlisted' => "Congratulations! You have been shortlisted for {$app_data['title']} at {$company_display_name}.",
+            'interview' => "Your interview has been scheduled for {$app_data['title']} at {$company_display_name}. Check your notifications for details.",
+            'selected' => "🎉 Congratulations! You have been selected for {$app_data['title']} at {$company_display_name}!",
+            'rejected' => "Unfortunately, your application for {$app_data['title']} at {$company_display_name} was not successful this time."
             ];
             
             $notification_title = "Application Status Updated";
@@ -142,31 +143,32 @@ $stmt->bind_param($types, ...$params);
 $stmt->execute();
 $applications = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
-// Get statistics for tabs
+// Get statistics for tabs - UPDATED WITH INTERVIEW
 $stats_query = "
     SELECT 
         COUNT(*) as total,
         SUM(CASE WHEN a.status = 'pending' THEN 1 ELSE 0 END) as pending,
         SUM(CASE WHEN a.status = 'reviewed' THEN 1 ELSE 0 END) as reviewed,
         SUM(CASE WHEN a.status = 'shortlisted' THEN 1 ELSE 0 END) as shortlisted,
+        SUM(CASE WHEN a.status = 'interview' THEN 1 ELSE 0 END) as interview,
         SUM(CASE WHEN a.status = 'selected' THEN 1 ELSE 0 END) as selected,
         SUM(CASE WHEN a.status = 'rejected' THEN 1 ELSE 0 END) as rejected
     FROM applications a
     JOIN internships i ON a.internship_id = i.id
     WHERE i.company_id = ?
 ";
-
 $stmt = $conn->prepare($stats_query);
 $stmt->bind_param("i", $company_id);
 $stmt->execute();
 $stats = $stmt->get_result()->fetch_assoc();
 
-// Status badge helper
+// Status badge helper function - UPDATED WITH INTERVIEW
 function getStatusBadge($status) {
     $badges = [
         'pending' => ['color' => '#3b82f6', 'bg' => '#dbeafe', 'text' => 'PENDING'],
         'reviewed' => ['color' => '#8b5cf6', 'bg' => '#ede9fe', 'text' => 'REVIEWED'],
         'shortlisted' => ['color' => '#f59e0b', 'bg' => '#fef3c7', 'text' => 'SHORTLISTED'],
+        'interview' => ['color' => '#06b6d4', 'bg' => '#cffafe', 'text' => 'INTERVIEW'],
         'selected' => ['color' => '#059669', 'bg' => '#d1fae5', 'text' => 'SELECTED'],
         'rejected' => ['color' => '#ef4444', 'bg' => '#fee2e2', 'text' => 'REJECTED']
     ];
@@ -836,6 +838,12 @@ $user_initials = strtoupper(substr($company_name, 0, 2));
                     <i class="fas fa-star"></i>
                     Shortlisted
                     <span class="tab-count"><?php echo $stats['shortlisted']; ?></span>
+                </a>
+                <a href="?tab=interview<?php echo $internship_filter > 0 ? '&internship='.$internship_filter : ''; ?>" 
+                   class="tab-btn <?php echo $tab === 'interview' ? 'active' : ''; ?>">
+                    <i class="fas fa-star"></i>
+                    Interview
+                    <span class="tab-count"><?php echo $stats['interview']; ?></span>
                 </a>
                 <a href="?tab=selected<?php echo $internship_filter > 0 ? '&internship='.$internship_filter : ''; ?>" 
                    class="tab-btn <?php echo $tab === 'selected' ? 'active' : ''; ?>">

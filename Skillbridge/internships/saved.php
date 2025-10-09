@@ -49,6 +49,7 @@ $query = "
         c.logo_path,
         si.saved_at,
         (SELECT COUNT(*) FROM applications WHERE internship_id = i.id) as application_count,
+        (SELECT COUNT(*) FROM applications WHERE internship_id = i.id AND status = 'selected') as positions_filled,
         (SELECT COUNT(*) FROM applications WHERE internship_id = i.id AND student_id = ?) as has_applied
     FROM saved_internships si
     JOIN internships i ON si.internship_id = i.id
@@ -56,6 +57,7 @@ $query = "
     WHERE si.student_id = ?
     ORDER BY si.saved_at DESC
 ";
+
 
 $stmt = $conn->prepare($query);
 $stmt->bind_param("ii", $user_id, $user_id);
@@ -770,8 +772,9 @@ $user_initials = strtoupper(substr($full_name, 0, 2));
             <?php if (count($saved_internships) > 0): ?>
                 <div class="internships-grid">
                     <?php foreach ($saved_internships as $internship): 
-                        $positions_left = $internship['positions_available'] - $internship['application_count'];
-                        $is_full = $positions_left <= 0;
+                        $positions_left = $internship['positions_available'] - $internship['positions_filled'];
+                        $is_full = ($positions_left <= 0);
+
                         $is_expired = strtotime($internship['application_deadline']) < strtotime('today') || 
                                       !in_array($internship['status'], ['approved', 'active']);
                         
@@ -855,13 +858,12 @@ $user_initials = strtoupper(substr($full_name, 0, 2));
                             <div class="positions-section">
                                 <div class="positions-info">
                                     <?php if ($is_full): ?>
-                                        <span class="positions-full">
-                                            <i class="fas fa-times-circle"></i> Positions Filled
-                                        </span>
+                                        <span class="positions-full"><i class="fas fa-times-circle"></i> Positions Filled</span>
                                     <?php else: ?>
                                         <strong><?php echo $positions_left; ?></strong> / <?php echo $internship['positions_available']; ?> left
                                     <?php endif; ?>
-                                </div>
+                            </div>
+
                                 <button onclick="window.location.href='?unsave=<?php echo $internship['id']; ?>'" 
                                         class="btn btn-bookmark" 
                                         title="Remove from saved">

@@ -47,12 +47,14 @@ $base_query = "
         c.trust_level,
         c.logo_path,
         (SELECT COUNT(*) FROM applications WHERE internship_id = i.id) as application_count,
+        (SELECT COUNT(*) FROM applications WHERE internship_id = i.id AND status = 'selected') as positions_filled,
         (SELECT COUNT(*) FROM saved_internships WHERE internship_id = i.id AND student_id = ?) as is_saved,
         (SELECT COUNT(*) FROM applications WHERE internship_id = i.id AND student_id = ?) as has_applied
     FROM internships i
     JOIN companies c ON i.company_id = c.user_id
     WHERE i.status IN ('approved', 'active')
 ";
+
 
 $params = [$user_id, $user_id];
 $types = 'ii';
@@ -896,8 +898,9 @@ $user_initials = strtoupper(substr($full_name, 0, 2));
             <?php if (count($internships) > 0): ?>
                 <div class="internships-grid">
                     <?php foreach ($internships as $internship): 
-                        $positions_left = $internship['positions_available'] - $internship['application_count'];
-                        $is_full = $positions_left <= 0;
+                        $positions_left = $internship['positions_available'] - $internship['positions_filled'];
+                        $is_full = ($positions_left <= 0);
+
                         
                         // Determine badge
                         $badge_class = '';
@@ -983,19 +986,18 @@ $user_initials = strtoupper(substr($full_name, 0, 2));
                             <?php endif; ?>
 
                             <div class="card-footer">
-                                <div class="positions-info">
-                                    <?php if ($tab === 'current'): ?>
-                                        <?php if ($is_full): ?>
-                                            <span class="positions-full">
-                                                <i class="fas fa-times-circle"></i> Positions Filled
-                                            </span>
-                                        <?php else: ?>
-                                            <strong><?php echo $positions_left; ?></strong> / <?php echo $internship['positions_available']; ?> left
-                                        <?php endif; ?>
+                            <div class="positions-info">
+                                <?php if ($tab === 'current'): ?>
+                                    <?php if ($is_full): ?>
+                                        <span class="positions-full"><i class="fas fa-times-circle"></i> Positions Filled</span>
                                     <?php else: ?>
-                                        <?php echo $internship['positions_available']; ?> positions
+                                        <strong><?php echo $positions_left; ?></strong> / <?php echo $internship['positions_available']; ?> left
                                     <?php endif; ?>
-                                </div>
+                                <?php else: ?>
+                                    <?php echo $internship['positions_available']; ?> positions
+                                <?php endif; ?>
+                            </div>
+
                                 <div class="card-actions">
                                     <?php if ($tab === 'current'): ?>
                                         <button onclick="toggleSave(<?php echo $internship['id']; ?>, this)" 
