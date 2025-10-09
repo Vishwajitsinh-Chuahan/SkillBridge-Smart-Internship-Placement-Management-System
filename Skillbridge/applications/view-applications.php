@@ -9,18 +9,29 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'Company') {
 }
 
 $company_id = $_SESSION['user_id'];
-$company_name = $_SESSION['full_name'] ?? 'Company';
+// Fetch company name from database for display
+$company_name_query = $conn->query("SELECT name FROM companies WHERE user_id = $company_id");
+$company_name = 'Company'; // Default
+if ($company_name_query && $company_name_query->num_rows > 0) {
+    $company_name = $company_name_query->fetch_assoc()['name'];
+}
+
 
 // Handle status update
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_status'])) {
     $application_id = (int)$_POST['application_id'];
     $new_status = $_POST['status'];
     
-    // Verify this application belongs to this company's internship
+    // Verify this application belongs to this company's internship AND fetch company name
     $verify_query = "
-        SELECT a.student_id, i.title, a.status as old_status
+        SELECT 
+            a.student_id, 
+            i.title, 
+            a.status as old_status,
+            c.name as company_name
         FROM applications a 
-        JOIN internships i ON a.internship_id = i.id 
+        JOIN internships i ON a.internship_id = i.id
+        JOIN companies c ON i.company_id = c.user_id
         WHERE a.id = ? AND i.company_id = ?
     ";
     $stmt = $conn->prepare($verify_query);
@@ -31,18 +42,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_status'])) {
     if ($verify_result->num_rows > 0) {
         $app_data = $verify_result->fetch_assoc();
         
+        // Use company name from database
+        $company_display_name = $app_data['company_name'];
+        
         // Update application status
         $update_stmt = $conn->prepare("UPDATE applications SET status = ?, updated_at = NOW() WHERE id = ?");
         $update_stmt->bind_param("si", $new_status, $application_id);
         
         if ($update_stmt->execute()) {
-            // Create notification for student
+            // Create notification for student with COMPANY NAME
             $status_messages = [
-                'pending' => "Your application status has been updated to Pending.",
-                'reviewed' => "Your application for {$app_data['title']} has been reviewed by {$company_name}.",
-                'shortlisted' => "Congratulations! You have been shortlisted for {$app_data['title']} at {$company_name}.",
-                'selected' => "🎉 Congratulations! You have been selected for {$app_data['title']} at {$company_name}!",
-                'rejected' => "Your application for {$app_data['title']} at {$company_name} was not successful this time."
+                'pending' => "Your application status has been updated to Pending by {$company_display_name}.",
+                'reviewed' => "Your application for {$app_data['title']} has been reviewed by {$company_display_name}.",
+                'shortlisted' => "Congratulations! You have been shortlisted for {$app_data['title']} at {$company_display_name}.",
+                'selected' => "🎉 Congratulations! You have been selected for {$app_data['title']} at {$company_display_name}!",
+                'rejected' => "Unfortunately, your application for {$app_data['title']} at {$company_display_name} was not successful this time and the companay has decided to move with other candidates."
             ];
             
             $notification_title = "Application Status Updated";
@@ -918,12 +932,13 @@ $user_initials = strtoupper(substr($company_name, 0, 2));
                                                 <i class="fas fa-eye"></i>
                                             </a>
                                             <?php if (!empty($app['resume_path'])): ?>
-                                                <a href="../uploads/resumes/<?php echo htmlspecialchars($app['resume_path']); ?>" 
-                                                   target="_blank" 
-                                                   class="btn btn-sm btn-download" title="Download Resume">
+                                                <a href="../uploads/resumes/<?php echo basename($app['resume_path']); ?>" 
+                                                target="_blank" 
+                                                class="btn btn-sm btn-download" title="Download Resume">
                                                     <i class="fas fa-download"></i>
                                                 </a>
                                             <?php endif; ?>
+
                                             <button onclick="openStatusModal(<?php echo $app['id']; ?>, '<?php echo $app['status']; ?>', '<?php echo htmlspecialchars($app['student_name']); ?>')" 
                                                     class="btn btn-sm btn-status" title="Update Status">
                                                 <i class="fas fa-edit"></i>
