@@ -11,6 +11,12 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'Student') {
 $user_id = $_SESSION['user_id'];
 $full_name = $_SESSION['full_name'] ?? 'Student';
 
+$unread_result = $conn->query("SELECT COUNT(*) as count FROM notifications WHERE student_id = $user_id AND is_read = 0");
+$unread_count = 0;
+if ($unread_result) {
+    $unread_count = $unread_result->fetch_assoc()['count'];
+}
+
 // Fetch user details
 $stmt = $conn->prepare("SELECT * FROM users WHERE id = ?");
 $stmt->bind_param("i", $user_id);
@@ -207,6 +213,7 @@ function getStatusBadge($status) {
             font-size: 0.95rem;
             transition: all 0.2s ease;
             border-left: 3px solid transparent;
+            position: relative;
         }
 
         .nav-link:hover {
@@ -601,6 +608,19 @@ function getStatusBadge($status) {
             margin-bottom: 1.5rem;
         }
 
+         .notification-badge {
+            position: absolute;
+            right: 1rem;
+            background: #ef4444;
+            color: white;
+            font-size: 0.7rem;
+            font-weight: 700;
+            padding: 0.2rem 0.5rem;
+            border-radius: 10px;
+            min-width: 20px;
+            text-align: center;
+        }
+
         @media (max-width: 1200px) {
             .internships-grid {
                 grid-template-columns: 1fr;
@@ -675,6 +695,9 @@ function getStatusBadge($status) {
                     <a href="../settings/notifications.php" class="nav-link">
                         <i class="fas fa-bell"></i>
                         Notifications
+                        <?php if ($unread_count > 0): ?>
+                            <span class="notification-badge"><?php echo $unread_count; ?></span>
+                        <?php endif; ?>
                     </a>
                     <a href="../auth/logout.php" class="nav-link">
                         <i class="fas fa-sign-out-alt"></i>
