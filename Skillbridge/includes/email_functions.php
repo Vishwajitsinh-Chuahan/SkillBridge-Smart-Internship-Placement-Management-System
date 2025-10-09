@@ -1,6 +1,9 @@
 <?php
 // SkillBridge - Email Functions
 require_once '../config/email_config.php';
+if (!defined('BASE_URL')) {
+    require_once __DIR__ . '/../config/config.php';
+}
 
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\SMTP;
@@ -481,152 +484,216 @@ function sendWelcomeEmail($name, $email, $role, $username = '', $company_name = 
 /**
  * Generate Password Reset Email HTML (Common for all roles)
  */
-function generatePasswordResetEmail($name, $email, $resetToken, $role = '') {
+function generatePasswordResetEmail($name, $email, $resetToken, $role, $username = '') {
     // Reset URL for your SkillBridge setup
-    $resetUrl = BASE_URL . "/auth/reset_password.php?token=" . $resetToken;
+    $resetUrl = BASE_URL . '/auth/reset_password.php?token=' . urlencode($resetToken);
+    $roleText = $role ? " ($role)" : "";
     
-    $roleText = $role ? " ({$role})" : "";
-    
-    $html = '
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
-        <title>Reset Your Password - SkillBridge</title>
-        <style>
-            body {
-                margin: 0;
-                padding: 0;
-                font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-                line-height: 1.6;
-                color: #333;
-                background-color: #f4f4f4;
-            }
+    $html = <<<HTML
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <title>Reset Your Password - SkillBridge</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background-color: #f4f4f4;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background-color: #ffffff;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 0 20px rgba(0,0,0,0.1);
+        }
+        .header {
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+            color: white;
+            padding: 40px 30px;
+            text-align: center;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 28px;
+            font-weight: 700;
+        }
+        .content {
+            padding: 40px 30px;
+        }
+        .account-info {
+            background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+            border: 2px solid #93c5fd;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 25px 0;
+            border-left: 4px solid #3b82f6;
+        }
+        .account-info h3 {
+            margin: 0 0 15px 0;
+            color: #1e40af;
+            font-size: 18px;
+        }
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #e0e7ff;
+        }
+        .info-row:last-child {
+            border-bottom: none;
+        }
+        .info-label {
+            font-weight: 600;
+            color: #1e40af;
+        }
+        .info-value {
+            color: #374151;
+            font-weight: 500;
+        }
+        .warning-box {
+            background: #fef2f2;
+            border: 2px solid #fecaca;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 25px 0;
+            border-left: 4px solid #ef4444;
+        }
+        .warning-box h3 {
+            margin: 0 0 10px 0;
+            color: #dc2626;
+            font-size: 18px;
+        }
+        .reset-button {
+            text-align: center;
+            margin: 35px 0;
+        }
+        .reset-button a {
+            display: inline-block;
+            background: linear-gradient(135deg, #2563eb 0%, #059669 100%);
+            color: white !important;
+            text-decoration: none;
+            padding: 15px 35px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 16px;
+        }
+        .info-box {
+            background: #f0f9ff;
+            padding: 20px;
+            border-radius: 8px;
+            border-left: 4px solid #3b82f6;
+            margin: 25px 0;
+        }
+        .footer {
+            background: #f9fafb;
+            padding: 30px;
+            text-align: center;
+            color: #6b7280;
+            font-size: 14px;
+            border-top: 1px solid #e5e7eb;
+        }
+        @media (max-width: 600px) {
             .container {
-                max-width: 600px;
-                margin: 0 auto;
-                background-color: #ffffff;
-                border-radius: 10px;
-                overflow: hidden;
-                box-shadow: 0 0 20px rgba(0,0,0,0.1);
+                margin: 10px;
             }
-            .header {
-                background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
-                color: white;
-                padding: 40px 30px;
-                text-align: center;
-            }
-            .header h1 {
-                margin: 0;
-                font-size: 28px;
-                font-weight: 700;
-            }
-            .content {
-                padding: 40px 30px;
-            }
-            .warning-box {
-                background: #fef2f2;
-                border: 2px solid #fecaca;
-                border-radius: 8px;
+            .header, .content, .footer {
                 padding: 20px;
-                margin: 25px 0;
-                border-left: 4px solid #ef4444;
             }
-            .warning-box h3 {
-                margin: 0 0 10px 0;
-                color: #dc2626;
-                font-size: 18px;
-            }
-            .reset-button {
-                text-align: center;
-                margin: 35px 0;
-            }
-            .reset-button a {
-                display: inline-block;
-                background: linear-gradient(135deg, #2563eb 0%, #059669 100%);
-                color: white !important;
-                text-decoration: none;
-                padding: 15px 35px;
-                border-radius: 8px;
-                font-weight: 600;
-                font-size: 16px;
-            }
-            .info-box {
-                background: #f0f9ff;
-                padding: 20px;
-                border-radius: 8px;
-                border-left: 4px solid #3b82f6;
-                margin: 25px 0;
-            }
-            .footer {
-                background: #f9fafb;
-                padding: 30px;
-                text-align: center;
-                color: #6b7280;
-                font-size: 14px;
-                border-top: 1px solid #e5e7eb;
-            }
-            @media (max-width: 600px) {
-                .container { margin: 10px; }
-                .header, .content, .footer { padding: 20px; }
-            }
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <div class="header">
-                <h1><span style="font-family: Apple Color Emoji, Segoe UI Emoji;">🔒</span> Password Reset Request</h1>
-                <p>Reset your SkillBridge account password</p>
-            </div>
-            
-            <div class="content">
-                <h2>Hello ' . htmlspecialchars($name) . ',</h2>
-                <p>We received a request to reset the password for your SkillBridge account' . $roleText . ' associated with <strong>' . htmlspecialchars($email) . '</strong>.</p>
-                
-                <div class="warning-box">
-                    <h3><span style="font-family: Apple Color Emoji, Segoe UI Emoji;">⚠️</span> Security Notice</h3>
-                    <p>If you did not request this password reset, please ignore this email and your password will remain unchanged. Someone may have entered your email address by mistake.</p>
-                </div>
-                
-                <p>To reset your password, click the button below:</p>
-                
-                <div class="reset-button">
-                    <a href="' . $resetUrl . '">Reset My Password</a>
-                </div>
-                
-                <div class="info-box">
-                    <h4><span style="font-family: Apple Color Emoji, Segoe UI Emoji;">⏰</span> Important Information:</h4>
-                    <ul style="margin: 10px 0; padding-left: 20px;">
-                        <li>This reset link will expire in <strong>1 hour</strong></li>
-                        <li>The link can only be used <strong>once</strong></li>
-                        <li>If the button doesn\'t work, copy and paste this link into your browser:</li>
-                    </ul>
-                    <p style="background: #e5e7eb; padding: 10px; border-radius: 4px; word-break: break-all; font-size: 12px; font-family: monospace;">
-                        ' . $resetUrl . '
-                    </p>
-                </div>
-                
-                <p style="margin-top: 30px; color: #6b7280;">
-                    <strong>Need help?</strong><br>
-                    If you\'re having trouble with the password reset, contact our support team at 
-                    <a href="mailto:' . SUPPORT_EMAIL . '" style="color: #2563eb;">' . SUPPORT_EMAIL . '</a>
-                </p>
-            </div>
-            
-            <div class="footer">
-                <p><strong>' . COMPANY_NAME . '</strong> - Bridging Skills with Career Opportunities</p>
-                <p style="font-size: 12px; color: #9ca3af; margin-top: 20px;">
-                    This email was sent to ' . htmlspecialchars($email) . ' because a password reset was requested for your SkillBridge account.
-                </p>
-                <p style="font-size: 12px; color: #9ca3af;">
-                    &copy; ' . date('Y') . ' SkillBridge. All rights reserved.
-                </p>
-            </div>
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1><span style="font-family: 'Apple Color Emoji', 'Segoe UI Emoji';">🔐</span> Password Reset Request</h1>
+            <p>Reset your SkillBridge account password</p>
         </div>
-    </body>
-    </html>';
+        
+        <div class="content">
+            <h2>Hello {$name},</h2>
+            <p>We received a request to reset the password for your SkillBridge account{$roleText} associated with <strong>{$email}</strong>.</p>
+            
+HTML;
+
+    // Add account info box if username is provided
+    if (!empty($username)) {
+        $html .= <<<HTML
+            <div class="account-info">
+                <h3><span style="font-family: 'Apple Color Emoji', 'Segoe UI Emoji';">📋</span> Account Details</h3>
+                <div class="info-row">
+                    <span class="info-label">Username:</span>
+                    <span class="info-value">{$username}</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Email:</span>
+                    <span class="info-value">{$email}</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Account Type:</span>
+                    <span class="info-value">{$role}</span>
+                </div>
+            </div>
+HTML;
+    }
+
+    $html .= <<<HTML
+            
+            <div class="warning-box">
+                <h3><span style="font-family: 'Apple Color Emoji', 'Segoe UI Emoji';">⚠️</span> Security Notice</h3>
+                <p>If you did not request this password reset, please ignore this email and your password will remain unchanged. Someone may have entered your username by mistake.</p>
+            </div>
+            
+            <p>To reset your password, click the button below:</p>
+            
+            <div class="reset-button">
+                <a href="{$resetUrl}">Reset My Password</a>
+            </div>
+            
+            <div class="info-box">
+                <h4><span style="font-family: 'Apple Color Emoji', 'Segoe UI Emoji';">ℹ️</span> Important Information</h4>
+                <ul style="margin: 10px 0; padding-left: 20px;">
+                    <li>This reset link will expire in <strong>1 hour</strong></li>
+                    <li>The link can only be used <strong>once</strong></li>
+                    <li>If the button doesn't work, copy and paste this link into your browser:</li>
+                </ul>
+                <p style="background: #e5e7eb; padding: 10px; border-radius: 4px; word-break: break-all; font-size: 12px; font-family: monospace;">
+                    {$resetUrl}
+                </p>
+            </div>
+            
+            <p style="margin-top: 30px; color: #6b7280;">
+                <strong>Need help?</strong><br>
+                If you're having trouble with the password reset, contact our support team at 
+                <a href="mailto:SUPPORT_EMAIL" style="color: #2563eb;">SUPPORT_EMAIL</a>
+            </p>
+        </div>
+        
+        <div class="footer">
+            <p><strong>COMPANY_NAME</strong> - Bridging Skills with Career Opportunities</p>
+            <p style="font-size: 12px; color: #9ca3af; margin-top: 20px;">
+                This email was sent to {$email} because a password reset was requested for your SkillBridge account.
+            </p>
+            <p style="font-size: 12px; color: #9ca3af;">
+                &copy; DATE_YEAR SkillBridge. All rights reserved.
+            </p>
+        </div>
+    </div>
+</body>
+</html>
+HTML;
+
+    // Replace placeholders with actual config values
+    $html = str_replace('SUPPORT_EMAIL', SUPPORT_EMAIL, $html);
+    $html = str_replace('COMPANY_NAME', COMPANY_NAME, $html);
+    $html = str_replace('DATE_YEAR', date('Y'), $html);
     
     return $html;
 }
@@ -634,13 +701,12 @@ function generatePasswordResetEmail($name, $email, $resetToken, $role = '') {
 /**
  * Send Password Reset Email
  */
-function sendPasswordResetEmail($name, $email, $resetToken, $role = '') {
-    $subject = "Reset Your SkillBridge Password - Action Required";
-    $body = generatePasswordResetEmail($name, $email, $resetToken, $role);
+function sendPasswordResetEmail($name, $email, $resetToken, $role, $username = '') {
+    $subject = "🔐 Reset Your SkillBridge Password - Action Required";
+    $body = generatePasswordResetEmail($name, $email, $resetToken, $role, $username);
     
     return sendEmail($email, $subject, $body, true);
 }
-
 ?>
 
 
