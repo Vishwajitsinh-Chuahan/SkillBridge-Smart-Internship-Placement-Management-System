@@ -2,7 +2,7 @@
 // Force IST timezone for this script
 date_default_timezone_set('Asia/Kolkata');
 
-require_once '../config/config.php';
+require_once '../config/database.php';
 require_once '../includes/email_functions.php';
 
 // Set database timezone to IST for this connection
@@ -14,23 +14,20 @@ $message_type = '';
 
 // Process password reset request
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $email = trim($_POST['email']);
+    $username = trim($_POST['username']);
     
-    if (empty($email)) {
-        $message = 'Please enter your email address.';
-        $message_type = 'error';
-    } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        $message = 'Please enter a valid email address.';
+    if (empty($username)) {
+        $message = 'Please enter your username.';
         $message_type = 'error';
     } else {
-        // Check if email exists - Modified for SkillBridge status handling
+        // Check if username exists - Fetch by USERNAME (unique identifier)
         $stmt = $conn->prepare("
             SELECT u.id, u.username, u.email, u.full_name, u.status, r.role_name 
             FROM users u 
             JOIN roles r ON u.role_id = r.id 
-            WHERE u.email = ? AND u.status != 'suspended'
+            WHERE u.username = ? AND u.status != 'suspended'
         ");
-        $stmt->bind_param("s", $email);
+        $stmt->bind_param("s", $username);
         $stmt->execute();
         $result = $stmt->get_result();
         
@@ -46,20 +43,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $updateStmt->bind_param("ssi", $resetToken, $expiryTime, $user['id']);
             
             if ($updateStmt->execute()) {
-                // Send password reset email (if function exists)
+                // Send password reset email
                 if (function_exists('sendPasswordResetEmail')) {
-                    $emailResult = sendPasswordResetEmail($user['full_name'], $user['email'], $resetToken, $user['role_name']);
+                    $emailResult = sendPasswordResetEmail(
+                        $user['full_name'], 
+                        $user['email'], 
+                        $resetToken, 
+                        $user['role_name'],
+                        $user['username']  // Pass username to email function
+                    );
                     
                     if ($emailResult['success']) {
-                        $message = 'Password reset instructions have been sent to your email address. Please check your inbox and follow the instructions to reset your password.';
+                        $message = 'Password reset instructions have been sent to your email address (' . substr($user['email'], 0, 3) . '***' . substr($user['email'], strpos($user['email'], '@')) . '). Please check your inbox and follow the instructions.';
                         $message_type = 'success';
                     } else {
-                        $message = 'We encountered an issue sending the reset email. Please try again or contact support at support@skillbridge.com.';
+                        $message = 'We encountered an issue sending the reset email. Please try again or contact support.';
                         $message_type = 'error';
-                        error_log("Failed to send password reset email to {$email}: " . $emailResult['message']);
+                        error_log("Failed to send password reset email to {$user['email']} for username {$username}: " . $emailResult['message']);
                     }
                 } else {
-                    $message = 'Password reset instructions have been sent to your email address. Please check your inbox and follow the instructions to reset your password.';
+                    $message = 'Password reset instructions have been sent to your email address.';
                     $message_type = 'success';
                 }
             } else {
@@ -67,8 +70,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $message_type = 'error';
             }
         } else {
-            // Don't reveal if email exists or not (security best practice)
-            $message = 'If an account with that email exists, you will receive password reset instructions shortly.';
+            // Don't reveal if username exists or not (security best practice)
+            $message = 'If an account with that username exists, you will receive password reset instructions shortly at your registered email address.';
             $message_type = 'success';
         }
     }
@@ -474,6 +477,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             margin-top: 1.5rem;
         }
 
+        .info-box {
+            background: #eff6ff;
+            border: 1px solid #bfdbfe;
+            border-radius: 10px;
+            padding: 1rem;
+            margin-bottom: 1.5rem;
+            display: flex;
+            align-items: start;
+            gap: 0.75rem;
+        }
+
+        .info-box i {
+            color: #2563eb;
+            margin-top: 2px;
+        }
+
+        .info-box p {
+            color: #1e40af;
+            font-size: 0.9rem;
+            margin: 0;
+            line-height: 1.5;
+        }
+
         /* Decorative Elements */
         .forgot-right::before {
             content: '';
@@ -513,106 +539,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         @media (max-width: 768px) {
             .forgot-container {
                 flex-direction: column;
-                min-height: 100vh;
-                height: fit-content;
             }
 
-            .forgot-left {
+            .forgot-left, .forgot-right {
                 flex: 0 0 auto;
-                height: fit-content;
-                min-height: 300px;
                 padding: 2rem 1rem;
-            }
-
-            .forgot-right {
-                flex: 1 1 auto;
-                height: fit-content;
-                padding: 2rem 1rem;
-                align-items: flex-start;
             }
 
             .brand-logo {
                 font-size: 2rem;
-                margin-bottom: 0.8rem;
             }
 
-            .brand-logo i {
-                font-size: 2.2rem;
-                padding: 0.6rem;
-            }
-
-            .brand-subtitle {
-                font-size: 1.1rem;
-                margin-bottom: 1.5rem;
-            }
-
-            .security-message {
-                margin-bottom: 1.5rem;
-            }
-
-            .security-message h3 {
-                font-size: 1.2rem;
-            }
-
-            .security-message p {
-                font-size: 0.9rem;
-            }
-
-            .security-features {
-                gap: 1rem;
-                margin-bottom: 1.5rem;
-            }
-
-            .security-item {
-                padding: 1rem;
-            }
-
-            .security-item i {
-                width: 40px;
-                height: 40px;
-                font-size: 1rem;
+            .forgot-header h1 {
+                font-size: 2rem;
             }
 
             .security-note {
                 display: none;
-            }
-
-            .back-home {
-                top: 1rem;
-                left: 1rem;
-                font-size: 0.9rem;
-                padding: 0.5rem 1rem;
-            }
-
-            .forgot-header h1 {
-                font-size: 2rem;
-            }
-
-            .forgot-form-container {
-                max-width: 100%;
-            }
-        }
-
-        @media (max-width: 480px) {
-            .forgot-left {
-                min-height: 250px;
-                padding: 1.5rem 1rem;
-            }
-
-            .forgot-right {
-                padding: 1.5rem 1rem;
-            }
-
-            .brand-logo {
-                font-size: 1.8rem;
-            }
-
-            .forgot-header h1 {
-                font-size: 1.8rem;
-            }
-
-            .form-control {
-                padding: 0.9rem 1rem;
             }
         }
     </style>
@@ -621,7 +564,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <div class="forgot-container">
         <!-- Left Side - Brand & Security Info -->
         <div class="forgot-left">
-            <a href="<?php echo BASE_URL; ?>/index.php" class="back-home">
+            <a href="../index.php" class="back-home">
                 <i class="fas fa-arrow-left"></i>
                 Back to Home
             </a>
@@ -636,7 +579,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <div class="security-content">
                 <div class="security-message">
                     <h3>Forgot your password?</h3>
-                    <p>No worries! We'll help you regain access to your SkillBridge account securely and get you back to exploring internship opportunities.</p>
+                    <p>No worries! Enter your username and we'll send password reset instructions to your registered email address.</p>
                 </div>
                 
                 <div class="security-features">
@@ -648,10 +591,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </div>
                     </div>
                     <div class="security-item">
-                        <i class="fas fa-clock"></i>
+                        <i class="fas fa-user-check"></i>
                         <div class="security-item-content">
-                            <h4>Quick Recovery</h4>
-                            <p>Receive your reset instructions within minutes</p>
+                            <h4>Username Based</h4>
+                            <p>Reset password using your unique username</p>
                         </div>
                     </div>
                     <div class="security-item">
@@ -676,7 +619,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <div class="forgot-form-container">
                 <div class="forgot-header">
                     <h1>Reset Password</h1>
-                    <p>Enter your email to receive reset instructions</p>
+                    <p>Enter your username to continue</p>
+                </div>
+
+                <div class="info-box">
+                    <i class="fas fa-lightbulb"></i>
+                    <p><strong>Forgot your username?</strong> Your username is the one you created during registration. If you've forgotten it, please contact support.</p>
                 </div>
 
                 <?php if ($message): ?>
@@ -700,13 +648,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <?php if (!$message || $message_type === 'error'): ?>
                 <form method="POST" action="" id="forgotForm">
                     <div class="form-group">
-                        <label for="email" class="form-label">
-                            <i class="fas fa-envelope"></i> Email Address
+                        <label for="username" class="form-label">
+                            <i class="fas fa-user"></i> Username
                         </label>
-                        <input type="email" id="email" name="email" class="form-control"
-                               value="<?php echo isset($email) ? htmlspecialchars($email) : ''; ?>" 
-                               placeholder="Enter your registered email address" required>
-                        <small class="form-text">We'll send reset instructions to this email</small>
+                        <input type="text" id="username" name="username" class="form-control"
+                               value="<?php echo isset($username) ? htmlspecialchars($username) : ''; ?>" 
+                               placeholder="Enter your username" 
+                               required 
+                               autocomplete="username">
+                        <small class="form-text">We'll send reset instructions to your registered email</small>
                     </div>
                     
                     <button type="submit" class="auth-btn" id="resetBtn">
@@ -750,11 +700,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             container.classList.add('loading');
         });
 
-        // Auto-focus on email input
+        // Auto-focus on username input
         document.addEventListener('DOMContentLoaded', function() {
-            const emailInput = document.getElementById('email');
-            if (emailInput) {
-                emailInput.focus();
+            const usernameInput = document.getElementById('username');
+            if (usernameInput) {
+                usernameInput.focus();
             }
         });
 
