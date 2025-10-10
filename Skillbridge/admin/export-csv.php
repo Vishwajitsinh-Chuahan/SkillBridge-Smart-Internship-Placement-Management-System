@@ -77,8 +77,7 @@ function exportUsers($conn, $output) {
             u.phone,
             r.role_name,
             u.status,
-            u.created_at,
-            u.last_login
+            u.created_at
         FROM users u
         JOIN roles r ON u.role_id = r.id
         WHERE r.role_name IN ('Student', 'Company')
@@ -99,7 +98,7 @@ function exportUsers($conn, $output) {
                 $row['role_name'],
                 ucfirst($row['status']),
                 date('Y-m-d H:i:s', strtotime($row['created_at'])),
-                $row['last_login'] ? date('Y-m-d H:i:s', strtotime($row['last_login'])) : 'Never'
+                // $row['last_login'] ? date('Y-m-d H:i:s', strtotime($row['last_login'])) : 'Never'
             ]);
         }
     } else {
